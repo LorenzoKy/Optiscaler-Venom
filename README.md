@@ -7,10 +7,6 @@
 <br />
 <div align="center">
   <a href="https://ko-fi.com/lorenzoky"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>
-  <br />
-  <a href="https://github.com/sponsors/cdozdil?frequency=one-time"><img src="https://img.shields.io/badge/Support-the_OptiScaler_team-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Support the OptiScaler team" /></a>
-</div>
-<br />
 <div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
