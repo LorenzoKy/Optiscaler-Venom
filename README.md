@@ -7,6 +7,8 @@
 <br />
 <div align="center">
   <a href="https://ko-fi.com/lorenzoky"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>
+</div>
+<br />
 <div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
@@ -47,6 +49,22 @@ With the default settings the overlay looks exactly like upstream's: nothing cha
 2. Install it like regular OptiScaler: extract it next to the game's executable and rename `OptiScaler.dll` (for example to `dxgi.dll`). The full guide is in the [OptiScaler wiki](https://github.com/optiscaler/OptiScaler/wiki).
 3. Already using OptiScaler? Replace only `OptiScaler.dll` (renamed as before) and keep your `OptiScaler.ini`: the new overlay keys fall back to their defaults. To have them documented in your ini, take the one from the archive.
 
+## 🌙 Nightly builds: always up to date, not tested
+
+There are two kinds of downloads:
+
+| | Stable releases | Nightly builds |
+| --- | --- | --- |
+| What | A version checked by me before publishing | The **official OptiScaler nightly of the day** + the Venom changes, built automatically |
+| OptiScaler code | Upstream of the release date | The latest upstream changes, every day |
+| Tested in game | ✅ | ❌ **Not tested** |
+| Where | [**Latest release**](https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest) | [**Pre-releases**](https://github.com/LorenzoKy/Optiscaler-Venom/releases) named `OptiScaler Venom nightly YYYYMMDD` |
+
+> [!WARNING]
+> **Nightly builds are the way to always have OptiScaler's most recent changes, but nobody tests them.** They are built by a script every day from the [official nightly](https://github.com/optiscaler/OptiScaler-nightly/releases): if upstream breaks something, the nightly breaks too. Use them if you want the newest fixes and can live with bugs; otherwise stick to the stable releases. If a day's upstream changes conflict with the Venom ones, that day has no nightly.
+
+Every nightly says exactly what it's made of: the upstream nightly and commit with their dates, and the Venom commit. The full list is in the [changelog](CHANGELOG-Opti-Venom.md#nightly-builds). Only the last 14 nightlies are kept.
+
 ## 🎛️ Using the overlay
 
 Open the OptiScaler menu (`Insert` by default) and go to **FPS Overlay**:
@@ -63,19 +81,19 @@ Every option is also an `FpsOverlay*` key in `OptiScaler.ini`, each one document
 
 ## 📜 Changelog
 
-See [**CHANGELOG-Opti-Venom.md**](CHANGELOG-Opti-Venom.md). Every release says which upstream OptiScaler version it's built on.
+See [**CHANGELOG-Opti-Venom.md**](CHANGELOG-Opti-Venom.md). Every stable release says which upstream OptiScaler version and commit it's built on, and every nightly build is listed there with its upstream nightly, commits and dates.
 
 ## 🙏 Credits
 
 - **[OptiScaler](https://github.com/optiscaler/OptiScaler)** and its team and contributors (cdozdil, FakeMichau, TheRazerMD and everyone else): this build is entirely based on their work. If you like it, [support OptiScaler](https://github.com/sponsors/cdozdil?frequency=one-time).
 - **[LorenzoKy](https://github.com/LorenzoKy)**: FPS overlay rework and the OptiScaler Venom builds.
+- The third-party libraries and SDKs OptiScaler uses, listed in the [original README](README-OptiScaler.md).
 
 ## ☕ Support
 
 OptiScaler Venom is free and always will be. If it's useful to you and you'd like to say thanks, you can [buy me a coffee on Ko-fi](https://ko-fi.com/lorenzoky): completely optional, and appreciated. Supporting the [OptiScaler team](https://github.com/sponsors/cdozdil?frequency=one-time) helps the project this build is made of.
 
 <a href="https://ko-fi.com/lorenzoky"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>
-- The third-party libraries and SDKs OptiScaler uses, listed in the [original README](README-OptiScaler.md).
 
 ## ⚖️ License
 

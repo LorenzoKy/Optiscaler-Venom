@@ -6,6 +6,15 @@
 
 Changes of OptiScaler Venom compared to upstream [OptiScaler](https://github.com/optiscaler/OptiScaler). For upstream's own changes see [Changelog.md](Changelog.md) and the [OptiScaler releases](https://github.com/optiscaler/OptiScaler/releases).
 
+## Nightly builds
+
+Automatic and **not tested**: the official OptiScaler nightly of the day plus the Venom changes (see the [README](README.md#-nightly-builds-always-up-to-date-not-tested)). Newest first; each line is added by the build itself. Dates are UTC.
+
+| Build | Upstream nightly | Upstream commit (date) | Venom commit (date) |
+| --- | --- | --- | --- |
+<!-- nightly-rows -->
+| `opti-venom-nightly-20261024` | [nightly-20261024](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261024) (2026-10-24) | [`fd3a45a6`](https://github.com/optiscaler/OptiScaler/commit/fd3a45a6cac6d610a35c570479f80dae95ca4eac) (2026-10-23) | [`8037f10a`](https://github.com/LorenzoKy/OptiScaler/commit/8037f10a7a5ce960493e6174902dfb85b5b2ea16) (2026-10-24) |
+
 ## Venom v0.1 (2026-10-24)
 
 > **Built on OptiScaler `10.0.0.1` (development build, after stable `v0.9.4`)**

@@ -76,6 +76,7 @@ jobs:
         git config --global user.name "LorenzoKy"
         git config --global user.email "136495843+LorenzoKy@users.noreply.github.com"
         git config --global core.autocrlf false
+        export TZ=UTC
         git clone -q "https://github.com/$UPSTREAM.git" src
         cd src
         git checkout -q --detach "${{ steps.find.outputs.sha }}"
@@ -83,8 +84,13 @@ jobs:
         # Only our commits: those of the patch branch that upstream master doesn't have
         base=$(git merge-base venom-patch origin/master)
         git log --reverse --format='- %h %s' "$base..venom-patch" > ../patches.txt
-        echo "base=$base" >> "$GITHUB_OUTPUT"
-        echo "patch=$(git rev-parse --short=8 venom-patch)" >> "$GITHUB_OUTPUT"
+        {
+          echo "base=$base"
+          echo "patch=$(git rev-parse --short=8 venom-patch)"
+          echo "patch_sha=$(git rev-parse venom-patch)"
+          echo "patch_date=$(git log -1 --format=%cd --date=format-local:%Y-%m-%d venom-patch)"
+          echo "upstream_date=$(git log -1 --format=%cd --date=format-local:%Y-%m-%d HEAD)"
+        } >> "$GITHUB_OUTPUT"
         if ! git cherry-pick "$base..venom-patch" > ../pick.log 2>&1; then
           git diff --name-only --diff-filter=U > ../conflicts.txt
           git cherry-pick --abort || true
@@ -121,6 +127,17 @@ jobs:
         echo "::error::Patches conflict with ${{ steps.find.outputs.tag }}, build skipped"
         exit 1
 
+    - name: Changelog row
+      if: steps.merge.outputs.conflict == 'false'
+      run: |
+        d="${{ steps.find.outputs.date }}"
+        sha="${{ steps.find.outputs.sha }}"
+        psha="${{ steps.merge.outputs.patch_sha }}"
+        row="| \`${{ steps.find.outputs.ours }}\` | [${{ steps.find.outputs.tag }}](${{ steps.find.outputs.url }}) (${d:0:4}-${d:4:2}-${d:6:2}) | [\`${sha:0:8}\`](https://github.com/$UPSTREAM/commit/$sha) (${{ steps.merge.outputs.upstream_date }}) | [\`${psha:0:8}\`](https://github.com/$PATCH_REPO/commit/$psha) (${{ steps.merge.outputs.patch_date }}) |"
+        cd venom
+        grep -vF "| \`${{ steps.find.outputs.ours }}\` |" CHANGELOG-Opti-Venom.md | awk -v r="$row" '{print} /<!-- nightly-rows -->/{print r}' > cl.tmp
+        mv cl.tmp CHANGELOG-Opti-Venom.md
+
     - name: Add MSBuild to PATH
       if: steps.merge.outputs.conflict == 'false'
       uses: microsoft/setup-msbuild@v3
@@ -152,14 +169,16 @@ jobs:
         {
           echo "Automatic build: the official OptiScaler nightly of ${{ steps.find.outputs.date }} plus the Opti-Venom changes. Not tested in game, use the [stable releases]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/latest) if you want something checked."
           echo
-          echo "> **Built on upstream nightly [${{ steps.find.outputs.tag }}](${{ steps.find.outputs.url }})**"
-          echo "> Upstream \`master\` at commit [\`${sha:0:8}\`](https://github.com/$UPSTREAM/commit/$sha)."
+          d="${{ steps.find.outputs.date }}"
+          echo "> **Built on upstream nightly [${{ steps.find.outputs.tag }}](${{ steps.find.outputs.url }})** of ${d:0:4}-${d:4:2}-${d:6:2}"
+          echo "> Upstream \`master\` at commit [\`${sha:0:8}\`](https://github.com/$UPSTREAM/commit/$sha) (${{ steps.merge.outputs.upstream_date }})."
+          echo "> Venom changes at commit [\`${{ steps.merge.outputs.patch }}\`](https://github.com/$PATCH_REPO/commit/${{ steps.merge.outputs.patch_sha }}) (${{ steps.merge.outputs.patch_date }}) of [\`$PATCH_BRANCH\`](https://github.com/$PATCH_REPO/tree/$PATCH_BRANCH)."
           echo
-          echo "Opti-Venom changes applied (from [\`$PATCH_BRANCH\`](https://github.com/$PATCH_REPO/tree/$PATCH_BRANCH) @ \`${{ steps.merge.outputs.patch }}\`):"
+          echo "Opti-Venom changes applied:"
           echo
           cat patches.txt
           echo
-          echo "Upstream changes of this nightly: see the [nightly notes](${{ steps.find.outputs.url }})."
+          echo "Upstream changes of this nightly: see the [nightly notes](${{ steps.find.outputs.url }}). Every nightly is listed in the [changelog]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/CHANGELOG-Opti-Venom.md#nightly-builds). Dates are UTC."
           echo "All credit for OptiScaler goes to the [OptiScaler team](https://github.com/$UPSTREAM)."
         } > notes.md
         tag="${{ steps.find.outputs.ours }}"
@@ -171,6 +190,20 @@ jobs:
         for n in $(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict --state open --json number --jq '.[].number'); do
           gh issue close "$n" -R "$GITHUB_REPOSITORY" --comment "Solved: $tag was built."
         done
+
+    - name: Record in changelog
+      if: steps.merge.outputs.conflict == 'false'
+      working-directory: venom
+      run: |
+        git config user.name "LorenzoKy"
+        git config user.email "136495843+LorenzoKy@users.noreply.github.com"
+        git add CHANGELOG-Opti-Venom.md
+        git diff --cached --quiet && exit 0
+        export TZ=UTC GIT_AUTHOR_DATE="$(date -u +%Y-%m-%dT%H:%M:%S+0000)"
+        export GIT_COMMITTER_DATE="$GIT_AUTHOR_DATE"
+        git commit -q -m "Changelog: ${{ steps.find.outputs.ours }}"
+        for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep 10; done
+        echo "::warning::Could not push the changelog row"
 
     - name: Remove old nightlies
       if: steps.merge.outputs.conflict == 'false'
