@@ -1,0 +1,2511 @@
+#include "pch.h"
+
+#include <misc/IdentifyGpu.h>
+
+#include "input_common.h"
+#include "input_xell.h"
+#include <low_latency/low_latency_tech/ll_xell.h>
+#include <low_latency/low_latency_tech/ll_antilag2.h>
+#include <low_latency/low_latency_tech/ll_latencyflex.h>
+#include <low_latency/low_latency_tech/ll_reflex.h>
+#include <low_latency/low_latency_tech/ll_reflex_vk.h>
+#include <low_latency/low_latency_tech/ll_antilag_vk.h>
+#include <low_latency/low_latency_tech/ll_fps_limiter.h>
+#include <hooks/Vulkan_Hooks.h>
+#include <misc/FrameLimit.h>
+#include <inputs/FG/XeFG_Inputs_Dx12.h>
+#include <framegen/IFGFeature_Dx12.h>
+#include <nvapi/fakenvapi.h>
+
+#include <deque>
+#include <condition_variable>
+#include <thread>
+#include <functional>
+#include <random>
+#include <d3d11_4.h>
+
+std::atomic<std::shared_ptr<LowLatencyTech>> InputCommon::currently_active_tech;
+std::atomic<std::shared_ptr<LowLatencyTech>> InputCommon::xefg_xell;
+
+static bool marker_supported(InputMarkerMode mode, MarkerType type)
+{
+    switch (mode)
+    {
+    case InputMarkerMode::NoMarkers:
+        return false;
+    case InputMarkerMode::SimStartOnly:
+        return type == MarkerType::SIMULATION_START;
+    case InputMarkerMode::SimStartAndPresentStart:
+        return type == MarkerType::SIMULATION_START || type == MarkerType::PRESENT_START ||
+               type == MarkerType::OUT_OF_BAND_PRESENT_START;
+    case InputMarkerMode::SimOnly:
+        return type == MarkerType::SIMULATION_START || type == MarkerType::SIMULATION_END;
+    default:
+        return true;
+    }
+}
+
+// private
+bool InputCommon::deinit_current_tech()
+{
+    // currently_active_tech becomes nullptr
+    // but we need to wait for all users of the old one to release
+    auto old_tech = currently_active_tech.exchange(nullptr);
+
+    if (old_tech)
+    {
+        LOG_TRACE("Deiniting current tech");
+        while (old_tech.use_count() > 1)
+            std::this_thread::yield();
+
+        old_tech->deinit();
+
+        std::memset(frame_reports, 0, sizeof(frame_reports));
+
+        return true;
+    }
+
+    return false;
+}
+
+bool InputCommon::init_tech(IUnknown* pDevice, API api, LowLatencyMode desiredMode)
+{
+    if (!currently_active_tech.load() && delay_deinit == 0)
+    {
+        auto try_init = [&](auto low_latency_tech, const char* name) -> bool
+        {
+            if (low_latency_tech->init(pDevice))
+            {
+                LOG_INFO("LowLatency algo: {}", name);
+                currently_active_tech.store(std::move(low_latency_tech));
+                return true;
+            }
+            return false;
+        };
+
+        bool isInitialized = false;
+        switch (desiredMode)
+        {
+        case LowLatencyMode::XeLL:
+            isInitialized = try_init(std::make_shared<XeLL>(), "XeLL");
+            break;
+        case LowLatencyMode::AntiLag2:
+            isInitialized = try_init(std::make_shared<AntiLag2>(), "AntiLag2");
+            break;
+        case LowLatencyMode::Reflex:
+            if (api == API::Vulkan)
+                isInitialized = try_init(std::make_shared<ReflexVk>(), "Reflex Vulkan");
+            else
+                isInitialized = try_init(std::make_shared<Reflex>(), "Reflex");
+            break;
+        case LowLatencyMode::AntiLagVk:
+            isInitialized = try_init(std::make_shared<AntiLagVk>(), "AntiLag Vulkan");
+            break;
+        case LowLatencyMode::LatencyFlex:
+            isInitialized = try_init(std::make_shared<LatencyFlex>(), "LatencyFlex");
+            break;
+        case LowLatencyMode::FpsLimiter:
+            isInitialized = try_init(std::make_shared<FpsLimiter>(), "FPS Limiter");
+            break;
+        default:
+            break;
+        }
+
+        if (!isInitialized && desiredMode != LowLatencyMode::LatencyFlex)
+        {
+            failed_output = desiredMode;
+            failed_time = std::chrono::steady_clock::now();
+            isInitialized = try_init(std::make_shared<LatencyFlex>(), "LatencyFlex (Fallback)");
+            if (isInitialized)
+            {
+                Config::Instance()->LowLatencyOutput.set_volatile_value(LowLatencyMode::LatencyFlex);
+            }
+        }
+
+        if (auto current_tech = currently_active_tech.load(); current_tech && isInitialized)
+        {
+            activeOutput = current_tech->get_mode();
+            output_api = api;
+
+            // XeFG needs XeLL in low latency mode, disabling it only stops sending the sleep and marker calls
+            current_tech->set_forced_mode(xefg_paced());
+            current_tech->set_low_latency_override(Config::Instance()->FN_ForceReflex.value_or_default());
+
+            apply_sleep_mode(current_tech.get()); // Restore any potential sleep mode
+            return true;
+        }
+    }
+
+    return false;
+}
+
+LowLatencyMode InputCommon::default_output(API api)
+{
+    // TODO: add avaliableOutput, somehow ?
+    auto vendorId = IdentifyGpu::getPrimaryGpu().vendorId;
+
+    // Only the device's extensions, there's no XeLL for Vulkan
+    if (api == API::Vulkan)
+    {
+        if (vendorId == VendorId::AMD && VulkanHooks::o_vkAntiLagUpdateAMD != nullptr)
+            return LowLatencyMode::AntiLagVk;
+
+        if (driver_reflex_available(api))
+            return LowLatencyMode::Reflex;
+
+        return LowLatencyMode::LatencyFlex;
+    }
+
+    // XeLL is D3D12 only
+    if (vendorId == VendorId::Intel && api != API::DX11)
+        return LowLatencyMode::XeLL;
+
+    if (vendorId == VendorId::AMD)
+        return LowLatencyMode::AntiLag2;
+
+    if (driver_reflex_available(api))
+        return LowLatencyMode::Reflex;
+
+    return LowLatencyMode::LatencyFlex;
+}
+
+const char* InputCommon::output_unavailable(LowLatencyMode output, API api)
+{
+    if (output == LowLatencyMode::Reflex && !driver_reflex_available(api))
+        return api == API::Vulkan ? "Needs an Nvidia GPU with VK_NV_low_latency2" : "Needs an Nvidia GPU";
+
+    if (output == LowLatencyMode::AntiLagVk && VulkanHooks::o_vkAntiLagUpdateAMD == nullptr)
+        return "Needs an AMD GPU with VK_AMD_anti_lag";
+
+    if (output == LowLatencyMode::AntiLag2 && IdentifyGpu::getPrimaryGpu().vendorId != VendorId::AMD)
+        return "Needs an AMD GPU";
+
+    return nullptr;
+}
+
+bool InputCommon::driver_reflex_available(API api)
+{
+    if (IdentifyGpu::getPrimaryGpu().vendorId != VendorId::Nvidia)
+        return false;
+
+    if (api == API::Vulkan)
+        return VulkanHooks::o_vkSetLatencySleepModeNV != nullptr;
+
+    return !fakenvapi::isUsingAsMainNvapi();
+}
+
+LowLatencyMode InputCommon::for_api(LowLatencyMode mode, API api)
+{
+    if (api == API::Vulkan && mode == LowLatencyMode::AntiLag2)
+        return LowLatencyMode::AntiLagVk;
+
+    if (api != API::Vulkan && mode == LowLatencyMode::AntiLagVk)
+        return LowLatencyMode::AntiLag2;
+
+    if (api != API::DX12 && mode == LowLatencyMode::XeLL)
+        return default_output(api);
+
+    return mode;
+}
+
+API InputCommon::device_api(const InputContext& inputContext, IUnknown* pDevice)
+{
+    if (inputContext.api != API::NotSelected)
+        return inputContext.api;
+
+    // Reflex and UE take either D3D device
+    thread_local IUnknown* lastDevice = nullptr;
+    thread_local API lastApi = API::NotSelected;
+
+    if (pDevice == nullptr)
+        return lastApi;
+
+    if (pDevice != lastDevice)
+    {
+        ID3D11Device* device11 = nullptr;
+
+        if (pDevice->QueryInterface(IID_PPV_ARGS(&device11)) == S_OK)
+        {
+            device11->Release();
+            lastApi = API::DX11;
+        }
+        else
+        {
+            lastApi = API::DX12;
+        }
+
+        lastDevice = pDevice;
+    }
+
+    return lastApi;
+}
+
+API InputCommon::register_call(const InputContext& inputContext, IUnknown* pDevice)
+{
+    auto api = device_api(inputContext, pDevice);
+
+    // Ignore context that Opti creates
+    if (!inputContext.localContext)
+    {
+        if (api != API::NotSelected)
+            input_api[static_cast<size_t>(inputContext.caller)] = api;
+
+        avaliableInputs.set(inputContext.caller);
+    }
+
+    return api;
+}
+
+API InputCommon::uses_api()
+{
+    if (activeInput != LowLatencyInput::None)
+    {
+        if (auto api = input_api[static_cast<size_t>(activeInput)].load(); api != API::NotSelected)
+            return api;
+    }
+
+    return State::Instance().swapchainApi;
+}
+
+std::optional<LowLatencyMode> InputCommon::forced_output()
+{
+    // The game's XeFG paces through its own XeLL (no output). OptiScaler's XeFG takes XeLL, Reflex or AntiLag 2
+    // (xefg_output), its DLSSG and FSR-FG any output, the game's own FSR-FG and DLSSG default to their own
+    // (default_input, default_output).
+    if (InputXeLL::IsNative())
+        return LowLatencyMode::XeLL;
+
+    return std::nullopt;
+}
+
+// OptiScaler's XeFG paces with XeLL, the default. The GPU's Reflex or AntiLag 2 output can do the sleeping instead,
+// XeFG then keeps an XeLL context of its own (acquire_xefg_xell).
+LowLatencyMode InputCommon::xefg_output(LowLatencyMode configured)
+{
+    if ((configured == LowLatencyMode::Reflex || configured == LowLatencyMode::AntiLag2) &&
+        output_unavailable(configured, API::DX12) == nullptr)
+    {
+        return configured;
+    }
+
+    return LowLatencyMode::XeLL;
+}
+
+bool InputCommon::xefg_paced()
+{
+    // OptiScaler's XeFG needs XeLL in low latency mode and knows its generated frames
+    return activeOutput == LowLatencyMode::XeLL && State::Instance().activeFgOutput == FGOutput::XeFG;
+}
+
+LowLatencyInput InputCommon::default_input()
+{
+    // With the XeFG input the game's own low latency for its frame generation is XeLL, Reflex markers it also sends
+    // belong to its other paths. A game that turns XeLL off uses another frame generation, The Witcher 3 its DLSSG
+    // with Reflex.
+    if (State::Instance().activeFgInput == FGInput::XeFG && avaliableInputs[LowLatencyInput::XeLL] &&
+        get_sleep_copy(LowLatencyInput::XeLL).low_latency_enabled)
+    {
+        return LowLatencyInput::XeLL;
+    }
+
+    // The game's FSR-FG only reports its generated frames through AntiLag 2
+    if (avaliableInputs[LowLatencyInput::AntiLag2] && reports_frame_generation(LowLatencyInput::AntiLag2))
+        return LowLatencyInput::AntiLag2;
+
+    if (avaliableInputs[LowLatencyInput::Reflex])
+        return LowLatencyInput::Reflex;
+
+    // A game can have XeLL without it being enabled in its settings, it does nothing until it is
+    if (avaliableInputs[LowLatencyInput::XeLL] && get_sleep_copy(LowLatencyInput::XeLL).low_latency_enabled)
+        return LowLatencyInput::XeLL;
+
+    if (avaliableInputs[LowLatencyInput::AntiLag2])
+        return LowLatencyInput::AntiLag2;
+
+    if (avaliableInputs[LowLatencyInput::UeLowLatency])
+        return LowLatencyInput::UeLowLatency;
+
+    if (avaliableInputs[LowLatencyInput::XeLL])
+        return LowLatencyInput::XeLL;
+
+    // OptiScaler's own Streamline (DLSSG output) when the game has nothing
+    if (avaliableInputs[LowLatencyInput::OptiScaler])
+        return LowLatencyInput::OptiScaler;
+
+    return LowLatencyInput::None;
+}
+
+const char* InputCommon::incompatibility(LowLatencyInput input, LowLatencyMode output)
+{
+    // Reflex and XeLL send everything, with frame ids. OptiScaler sends its sleep and present markers, with ids.
+    if (input != LowLatencyInput::AntiLag2 && input != LowLatencyInput::UeLowLatency &&
+        input != LowLatencyInput::OptiScaler)
+    {
+        return nullptr;
+    }
+
+    if (output == LowLatencyMode::XeLL && input != LowLatencyInput::OptiScaler)
+    {
+        return input == LowLatencyInput::AntiLag2
+                   ? "XeLL needs frame ids and frame markers, AntiLag 2 has neither"
+                   : "XeLL needs render submit and present markers, UE only sends simulation markers";
+    }
+
+    // The other modes end frames on render submit markers, Reflex ID also sleeps on simulation start markers
+    if (output == LowLatencyMode::LatencyFlex &&
+        (LFXMode) Config::Instance()->FN_LatencyFlexMode.value_or_default() != LFXMode::Conservative)
+    {
+        return "LatencyFlex only works in the Conservative mode with this input";
+    }
+
+    return nullptr;
+}
+
+std::optional<LowLatencyInput> InputCommon::forced_input()
+{
+    // The game's XeFG (also with the XeFG passthrough) runs on the game's XeLL
+    if (XeFGInputs::Passthrough() || InputXeLL::IsNative())
+        return LowLatencyInput::XeLL;
+
+    return std::nullopt;
+}
+
+bool InputCommon::update_low_latency_tech(IUnknown* pDevice, API api, std::optional<LowLatencyMode> mode)
+{
+    // The game's XeFG runs on its own XeLL, nothing else may drive an output next to it (update() removes it)
+    if (InputXeLL::IsNative())
+    {
+        activeInput = LowLatencyInput::XeLL;
+        return true;
+    }
+
+    // An output asked for (OptiScaler's XeFG) starts without one
+    if (avaliableInputs.count() == 0 && !mode.has_value())
+    {
+        LOG_TRACE("No avaliable inputs");
+
+        // To reflect it in the menu in some way
+        // Config::Instance()->LowLatencyInput.set_volatile_value(LowLatencyInput::Auto);
+
+        return true;
+    }
+
+    LowLatencyMode desiredMode = LowLatencyMode::None;
+    LowLatencyInput desiredInput = Config::Instance()->LowLatencyInput.value_or_default();
+
+    if (!pDevice)
+    {
+        // Some outputs might call sleep with nullptr
+        if (activeOutput != LowLatencyMode::None && !mode.has_value())
+            return true; // Allow it if we already have an output and not trying to set manually
+        else
+            return false;
+    }
+
+    if (mode.has_value())
+        desiredMode = mode.value();
+
+    if (desiredMode != LowLatencyMode::None && desiredMode == activeOutput && api == output_api)
+    {
+        // No need to do anything
+        return true;
+    }
+
+    // TODO: add option for totally disabling specific inputs on boot
+
+    if (auto forced = forced_input())
+        desiredInput = *forced;
+
+    // None was the earlier name of the default
+    if (desiredInput == LowLatencyInput::None)
+        desiredInput = LowLatencyInput::Auto;
+
+    // The selection stays, the input is used once the game starts using it
+    if (!avaliableInputs[desiredInput] && desiredInput != LowLatencyInput::Auto)
+    {
+        static std::atomic<LowLatencyInput> unavailable = LowLatencyInput::_;
+
+        if (unavailable.exchange(desiredInput) != desiredInput)
+            LOG_WARN("Selected Low Latency Input is not avaliable yet: {}", magic_enum::enum_name(desiredInput));
+
+        desiredInput = LowLatencyInput::Auto;
+    }
+
+    if (desiredInput == LowLatencyInput::Auto)
+        desiredInput = default_input();
+
+    // We can just change the activeInput because it only controls what calls get through
+    if (activeInput != desiredInput)
+    {
+        activeInput = desiredInput;
+        LOG_INFO("Low latency input: {}", magic_enum::enum_name(activeInput));
+
+        // The previous input's frame reports would stay in the overlay, its frame ids don't continue
+        std::memset(frame_reports, 0, sizeof(frame_reports));
+
+        for (auto& id : last_marker_frame_ids)
+            id = 0;
+
+        if (auto current_tech = currently_active_tech.load())
+            apply_sleep_mode(current_tech.get()); // Restore any potential sleep mode
+    }
+
+    // The output runs on the active input's device, another API's device can't start it. OptiScaler's frame
+    // generation asks for its output with its own device.
+    if (auto inputApi = input_api[static_cast<size_t>(activeInput)].load();
+        !mode.has_value() && inputApi != API::NotSelected && api != inputApi)
+    {
+        return true;
+    }
+
+    // The frame generation output decides the low latency output it works with: the game's XeFG its own XeLL,
+    // OptiScaler's XeFG XeLL (also for Auto) or the GPU's Reflex or AntiLag 2
+    auto forced = forced_output();
+
+    if (!forced.has_value() && State::Instance().activeFgOutput == FGOutput::XeFG)
+        forced = xefg_output(Config::Instance()->LowLatencyOutput.value_or_default());
+
+    // The frame generation that decides the output runs it on its own device, OptiScaler's XeFG its XeLL on D3D12
+    // also for D3D11 games through interop. Calls from an API without that output only drive it, the frame
+    // generation starts it (set_low_latency_tech). Reflex and AntiLag 2 run on the game's device.
+    if (forced.has_value() && !mode.has_value() && for_api(*forced, api) != *forced)
+        return true;
+
+    if (desiredMode == LowLatencyMode::None)
+        desiredMode = Config::Instance()->LowLatencyOutput.value_or_default();
+
+    // An output the GPU can't run is Auto
+    if (desiredMode == LowLatencyMode::Auto || desiredMode == LowLatencyMode::None ||
+        output_unavailable(desiredMode, api) != nullptr)
+    {
+        desiredMode = default_output(api);
+    }
+
+    if (forced.has_value())
+        desiredMode = *forced;
+
+    desiredMode = for_api(desiredMode, api);
+
+    // XeFG paces with the XeLL output's own context, which stays the output until XeFG lets go of it
+    if (xefg_uses_output_xell && activeOutput == LowLatencyMode::XeLL && desiredMode != LowLatencyMode::XeLL)
+    {
+        static std::atomic<LowLatencyMode> waiting = LowLatencyMode::None;
+
+        if (waiting.exchange(desiredMode) != desiredMode)
+            LOG_INFO("Low latency output {} waits for XeFG to restart, it paces with the XeLL output's context",
+                     magic_enum::enum_name(desiredMode));
+
+        return true;
+    }
+
+    // An output that couldn't start keeps its fallback instead of being retried every call
+    if (desiredMode == failed_output && currently_active_tech.load() != nullptr &&
+        std::chrono::steady_clock::now() - failed_time < std::chrono::seconds(10))
+    {
+        desiredMode = activeOutput;
+    }
+
+    if (activeOutput == desiredMode && api == output_api)
+    {
+        delay_deinit = 0;
+        return true;
+    }
+
+    // Beyond this point activeOutput needs changing
+
+    std::scoped_lock lock(create_tech_mutex);
+
+    if (init_tech(pDevice, api, desiredMode))
+        return true;
+
+    auto try_reinit = [&]() -> bool
+    {
+        if (!deinit_current_tech())
+        {
+            LOG_ERROR("Couldn't deinitialize low latency tech");
+            return false;
+        }
+
+        return init_tech(pDevice, api, desiredMode);
+    };
+
+    // WAR: FSR FG might still be using AntiLag 2, give Opti time to set AL2 context to null
+    if (delay_deinit > 0)
+    {
+        if (--delay_deinit == 0)
+            return try_reinit();
+    }
+    else
+    {
+        bool al2 = false;
+        {
+            auto current_tech = currently_active_tech.load();
+            if (current_tech && current_tech->get_mode() == LowLatencyMode::AntiLag2)
+                al2 = true;
+        }
+
+        if (al2)
+        {
+            delay_deinit = 50;
+        }
+        else
+        {
+            return try_reinit();
+        }
+    }
+
+    return true;
+}
+
+void InputCommon::add_marker_to_report(const MarkerParams& marker_params)
+{
+    auto current_timestamp = Util::GetTimestamp() / 1000;
+    static auto last_sim_start = current_timestamp;
+    static auto _2nd_last_sim_start = current_timestamp;
+    auto current_report = &frame_reports[marker_params.frame_id % FRAME_REPORTS_BUFFER_SIZE];
+
+    if (current_report->frameID != marker_params.frame_id)
+    {
+        *current_report = FrameReport {};
+    }
+
+    current_report->frameID = marker_params.frame_id;
+    current_report->gpuFrameTimeUs = (uint32_t) (last_sim_start - _2nd_last_sim_start);
+    current_report->gpuActiveRenderTimeUs = 100;
+    current_report->driverStartTime = current_timestamp;
+    current_report->driverEndTime = current_timestamp + 100;
+    current_report->gpuRenderStartTime = current_timestamp;
+    current_report->gpuRenderEndTime = current_timestamp + 100;
+    current_report->osRenderQueueStartTime = current_timestamp;
+    current_report->osRenderQueueEndTime = current_timestamp + 100;
+    switch (marker_params.marker_type)
+    {
+    case MarkerType::SIMULATION_START:
+        _2nd_last_sim_start = last_sim_start;
+        last_sim_start = Util::GetTimestamp() / 1000;
+        current_report->simStartTime = last_sim_start;
+        break;
+    case MarkerType::SIMULATION_END:
+        current_report->simEndTime = Util::GetTimestamp() / 1000;
+        break;
+    case MarkerType::RENDERSUBMIT_START:
+        current_report->renderSubmitStartTime = Util::GetTimestamp() / 1000;
+        break;
+    case MarkerType::RENDERSUBMIT_END:
+        current_report->renderSubmitEndTime = Util::GetTimestamp() / 1000;
+        break;
+    case MarkerType::PRESENT_START:
+        current_report->presentStartTime = Util::GetTimestamp() / 1000;
+        break;
+    case MarkerType::PRESENT_END:
+        current_report->presentEndTime = Util::GetTimestamp() / 1000;
+        break;
+    case MarkerType::INPUT_SAMPLE:
+        current_report->inputSampleTime = Util::GetTimestamp() / 1000;
+        break;
+    default:
+        break;
+    }
+}
+
+// public
+InputResult InputCommon::set_low_latency_tech(IUnknown* pDevice, LowLatencyMode mode)
+{
+    if (!update_low_latency_tech(pDevice, API::DX12, mode))
+        return InputResult::LowLatencyUpdateFail;
+
+    return InputResult::Ok;
+}
+
+InputResult InputCommon::sleep(const InputContext& inputContext, IUnknown* pDevice, std::optional<uint32_t> frame_id)
+{
+    if (!update_low_latency_tech(pDevice, register_call(inputContext, pDevice)))
+        return InputResult::LowLatencyUpdateFail;
+
+    if (inputContext.caller != activeInput)
+        return InputResult::UsingDifferentInput;
+
+    presents_without_input = 0;
+
+    if (auto current_tech = currently_active_tech.load())
+    {
+        const auto start = std::chrono::steady_clock::now();
+        current_tech->sleep(frame_id);
+        const auto slept = std::chrono::steady_clock::now() - start;
+        last_sleep_ms = std::chrono::duration<double, std::milli>(slept).count();
+
+        overlay_sleep_us += std::chrono::duration_cast<std::chrono::microseconds>(slept).count();
+        overlay_sleeps++;
+    }
+    else
+    {
+        return InputResult::NoReadyOutput;
+    }
+
+    return InputResult::Ok;
+}
+
+InputResult InputCommon::set_marker(const InputContext& inputContext, IUnknown* pDevice,
+                                    const MarkerParams& marker_params, bool toOutput)
+{
+    if (!update_low_latency_tech(pDevice, register_call(inputContext, pDevice)))
+        return InputResult::LowLatencyUpdateFail;
+
+    if (inputContext.caller != activeInput)
+        return InputResult::UsingDifferentInput;
+
+    // The game tags a frame with the overlay's ping, also when the output doesn't take the marker
+    if (marker_params.marker_type == MarkerType::PC_LATENCY_PING && !inputContext.localContext)
+        note_latency_ping(marker_params.frame_id);
+
+    if (!marker_supported(inputContext.markerMode, marker_params.marker_type))
+        return InputResult::InputNotSupported;
+
+    // Some games send a frame's marker twice (The Witcher 3 ends its render submit again after present), the first
+    // one is the right one. Frame id 0 is what inputs without frame ids send.
+    if (auto type = (size_t) marker_params.marker_type;
+        type < last_marker_frame_ids.size() && marker_params.frame_id != 0)
+    {
+        if (last_marker_frame_ids[type].exchange(marker_params.frame_id) == marker_params.frame_id)
+            return InputResult::Ok;
+    }
+
+    presents_without_input = 0;
+
+    if (marker_params.marker_type == MarkerType::PRESENT_START)
+        last_present_start_frame_id = marker_params.frame_id;
+
+    // Without frame ids there's nothing to report, the overlay's timings need them
+    if (!inputContext.noFrameId)
+    {
+        add_marker_to_report(marker_params);
+
+        if (marker_params.marker_type == MarkerType::SIMULATION_START)
+        {
+            State::Instance().reflexFrameId = marker_params.frame_id;
+            note_ping_sim_start(marker_params.frame_id);
+        }
+    }
+    else if (marker_params.marker_type == MarkerType::SIMULATION_START)
+    {
+        note_sim_start_without_id();
+    }
+
+    if (!toOutput)
+        return InputResult::Ok;
+
+    // XeFG's own XeLL context follows the game's frames while a Reflex or AntiLag 2 output sleeps
+    if (marker_params.frame_id != 0)
+    {
+        if (auto own = xefg_xell.load())
+            own->set_marker(pDevice, marker_params);
+    }
+
+    // Markers without a frame id only let AntiLag 2 and LatencyFlex follow the sleep calls, Reflex and XeLL use ids
+    if (marker_params.frame_id == 0 && (activeOutput == LowLatencyMode::Reflex || activeOutput == LowLatencyMode::XeLL))
+    {
+        return InputResult::Ok;
+    }
+
+    if (auto current_tech = currently_active_tech.load())
+        current_tech->set_marker(pDevice, marker_params);
+    else
+        return InputResult::NoReadyOutput;
+
+    LOG_TRACE_LOWLATENCY("{}: {}", magic_enum::enum_name(marker_params.marker_type), marker_params.frame_id);
+
+    return InputResult::Ok;
+}
+
+InputResult InputCommon::set_async_marker(const InputContext& inputContext, ID3D12CommandQueue* pCommandQueue,
+                                          const MarkerParams& marker_params)
+{
+    auto fgOutput = State::Instance().activeFgOutput;
+
+    // Async markers only come with frame generation, the game's own when it's the game's input
+    if (!inputContext.localContext)
+        mark_frame_generation(inputContext.caller);
+
+    // The game's describe presents that don't happen. With the Reflex output OptiScaler's FSR-FG sends the async
+    // markers of its own presents (fg_output_present), its XeFG does for every output (also xefg_marker, XeFG itself
+    // for the XeLL output).
+    if (fgOutput == FGOutput::XeFG || (activeOutput == LowLatencyMode::Reflex && fgOutput == FGOutput::FSRFG))
+        return InputResult::UsingDifferentInput;
+
+    // The presents give AntiLag 2 the frame types of the game's DLSSG (dlssg_present)
+    if (marker_params.marker_type == MarkerType::OUT_OF_BAND_PRESENT_START && !marker_params.interpolated.has_value() &&
+        dlssg_types_presents())
+    {
+        return InputResult::Ok;
+    }
+
+    // Always allow Opti's local contexts through, like XeLL, AL2 or the async markers of its DLSSG output's
+    // Streamline (with the Reflex output those go to the driver directly)
+    if (inputContext.caller != activeInput && !inputContext.localContext)
+        return InputResult::UsingDifferentInput;
+
+    // Can't init using ID3D12CommandQueue, can only check if available. Opti's own contexts mark frames whether or not
+    // the game runs a low latency tech, without an output their markers have nowhere to go.
+    if (!currently_active_tech.load())
+        return inputContext.localContext ? InputResult::Ok : InputResult::LowLatencyUpdateFail;
+
+    if (!marker_supported(inputContext.markerMode, marker_params.marker_type))
+        return InputResult::InputNotSupported;
+
+    // TODO: could consider adding async markers to the report but would require some rewriting
+    // add_marker_to_report(marker_params);
+
+    if (auto current_tech = currently_active_tech.load())
+        current_tech->set_async_marker(pCommandQueue, marker_params);
+    else
+        return InputResult::NoReadyOutput;
+
+    LOG_TRACE_LOWLATENCY("{}: {}", magic_enum::enum_name(marker_params.marker_type), marker_params.frame_id);
+
+    return InputResult::Ok;
+}
+
+InputResult InputCommon::set_sleep_mode(const InputContext& inputContext, IUnknown* pDevice, SleepMode* sleep_mode)
+{
+    // Ignore context that Opti creates. Its contexts (XeFG's XeLL) don't stand for the game's setting either, which
+    // is kept even without an output yet: AntiLag 2 and XeLL only send it when it changes.
+    if (!inputContext.localContext)
+        get_sleep_copy(inputContext.caller) = *sleep_mode;
+
+    if (!update_low_latency_tech(pDevice, register_call(inputContext, pDevice)))
+        return InputResult::LowLatencyUpdateFail;
+
+    if (inputContext.caller != activeInput)
+        return InputResult::UsingDifferentInput;
+
+    if (auto current_tech = currently_active_tech.load())
+        apply_sleep_mode(current_tech.get());
+    else
+        return InputResult::NoReadyOutput;
+
+    return InputResult::Ok;
+}
+
+InputResult InputCommon::get_sleep_status(const InputContext& inputContext, IUnknown* pDevice,
+                                          SleepParams* sleep_params)
+{
+    if (!update_low_latency_tech(pDevice, register_call(inputContext, pDevice)))
+        return InputResult::LowLatencyUpdateFail;
+
+    // Get functions don't really need to worry about this check
+    // if (inputContext.caller != activeInput)
+    //     return InputResult::UsingDifferentInput;
+
+    if (auto current_tech = currently_active_tech.load())
+        current_tech->get_sleep_status(sleep_params);
+    else
+        return InputResult::NoReadyOutput;
+
+    return InputResult::Ok;
+}
+
+InputResult InputCommon::get_latency(const InputContext& inputContext, IUnknown* pDev, void* latency_params)
+{
+    // if (inputContext.caller != activeInput)
+    //     return InputResult::UsingDifferentInput;
+
+    if (!update_low_latency_tech(pDev, register_call(inputContext, pDev)))
+        return InputResult::LowLatencyUpdateFail;
+
+    if (!latency_params)
+        return InputResult::InvalidParameter;
+
+    // OptiScaler's own Streamline uses Reflex too
+    if (inputContext.caller == LowLatencyInput::Reflex || inputContext.caller == LowLatencyInput::OptiScaler)
+    {
+        if (activeOutput == LowLatencyMode::Reflex)
+        {
+            if (auto reflex_tech = std::dynamic_pointer_cast<Reflex>(currently_active_tech.load()))
+            {
+                if (reflex_tech->get_latency((NV_LATENCY_RESULT_PARAMS*) latency_params) == NVAPI_OK)
+                    return InputResult::Ok;
+            }
+        }
+
+        NV_LATENCY_RESULT_PARAMS* reports = (NV_LATENCY_RESULT_PARAMS*) latency_params;
+
+        if (reports->version != NV_LATENCY_RESULT_PARAMS_VER1)
+        {
+            LOG_ERROR("Unsupported version {}", reports->version);
+            return InputResult::InvalidParameter;
+        }
+
+        static_assert(sizeof(reports->frameReport) == NVAPI_BUFFER_SIZE * sizeof(FrameReport));
+
+        if (!copy_frame_reports((FrameReport*) reports->frameReport))
+            return InputResult::NotEnoughReports;
+
+        return InputResult::Ok;
+    }
+    else if (inputContext.caller == LowLatencyInput::XeLL)
+    {
+        xell_frame_report_t* reports = (xell_frame_report_t*) latency_params;
+        constexpr size_t reportCount = 64; // 64 reports, if the app allocated less then it's on them
+
+        if (activeOutput == LowLatencyMode::XeLL)
+        {
+            if (auto current_tech = currently_active_tech.load())
+            {
+                auto xell_tech = std::static_pointer_cast<XeLL>(current_tech);
+                auto result = xell_tech->xellGetFramesReports(reports);
+
+                if (result == XELL_RESULT_SUCCESS)
+                    return InputResult::Ok;
+            }
+        }
+
+        // Hopefully not too slow
+        // XeLL doesn't seem to make any guarantees about ordering so no sort needed
+        for (auto i = 0; i < reportCount; i++)
+        {
+            auto& reportOut = reports[i];
+            auto& reportIn = frame_reports[i];
+
+            reportOut.m_frame_id = reportIn.frameID & 0xFFFFFFFF;
+            reportOut.m_sim_start_ts = reportIn.simStartTime;
+            reportOut.m_sim_end_ts = reportIn.simEndTime;
+            reportOut.m_render_submit_start_ts = reportIn.renderSubmitStartTime;
+            reportOut.m_render_submit_end_ts = reportIn.renderSubmitEndTime;
+            reportOut.m_present_start_ts = reportIn.presentStartTime;
+            reportOut.m_present_end_ts = reportIn.presentEndTime;
+        }
+
+        return InputResult::Ok;
+    }
+    else
+    {
+        return InputResult::InputNotSupported;
+    }
+}
+
+bool InputCommon::copy_frame_reports(FrameReport* reports)
+{
+    // Assume no frame reports collected yet, report all zeros
+    if (frame_reports[FRAME_REPORTS_BUFFER_SIZE - 1].frameID == 0)
+    {
+        std::memset(reports, 0, NVAPI_BUFFER_SIZE * sizeof(FrameReport));
+        // spdlog::warn("GetLatency: Not enough data to report");
+        return false;
+    }
+
+    // Sort frame reports, find the oldest
+    size_t minIdx = 0;
+    uint64_t minID = frame_reports[0].frameID;
+    for (size_t i = 1; i < FRAME_REPORTS_BUFFER_SIZE; i++)
+    {
+        if (frame_reports[i].frameID < minID)
+        {
+            minID = frame_reports[i].frameID;
+            minIdx = i;
+        }
+    }
+
+    // Copy starting from older before wrapping around
+    size_t firstChunk = std::min<uint64_t>(NVAPI_BUFFER_SIZE, FRAME_REPORTS_BUFFER_SIZE - minIdx);
+    std::memcpy(reports, frame_reports + minIdx, firstChunk * sizeof(FrameReport));
+
+    // Copy the rest after wrapping around
+    if (firstChunk < NVAPI_BUFFER_SIZE)
+        std::memcpy(reports + firstChunk, frame_reports, (NVAPI_BUFFER_SIZE - firstChunk) * sizeof(FrameReport));
+
+    return true;
+}
+
+InputResult InputCommon::get_frame_reports(const InputContext& inputContext, IUnknown* pDev, FrameReport* reports)
+{
+    if (!update_low_latency_tech(pDev, register_call(inputContext, pDev)))
+        return InputResult::LowLatencyUpdateFail;
+
+    if (reports == nullptr)
+        return InputResult::InvalidParameter;
+
+    return copy_frame_reports(reports) ? InputResult::Ok : InputResult::NotEnoughReports;
+}
+
+#define UPDATE_TIMING_ENTRY(name, type)                                                                                \
+    if (frameReport.name##EndTime >= frameReport.name##StartTime)                                                      \
+    {                                                                                                                  \
+        double name##Pos = (double) (frameReport.name##StartTime - start) / rangeNs;                                   \
+        double name##Length = (double) (frameReport.name##EndTime - frameReport.name##StartTime) / rangeNs;            \
+        timingDataOut.type = TimingEntry { .position = name##Pos, .length = name##Length };                            \
+    }                                                                                                                  \
+    else                                                                                                               \
+    {                                                                                                                  \
+        timingDataOut.type.reset();                                                                                    \
+    }
+
+bool InputCommon::get_timing_data(TimingData& timingDataOut)
+{
+    InputContext tempContext {};
+
+    if (activeOutput == LowLatencyMode::Reflex)
+    {
+        // TODO: allocate struct and get everything from reflex
+        timingDataOut = {};
+        return false;
+    }
+
+    // auto processFrameReport = [&](const auto& frameReport) -> bool
+    //{
+    //     uint64_t start = UINT64_MAX;
+    //     uint64_t end = 0;
+
+    //    // Please don't look, just thought it would be least work
+    //    auto pTimes = (const uint64_t*) &frameReport.simStartTime;
+    //    for (auto i = 0; i < 11; i++)
+    //    {
+    //        auto& time = pTimes[i];
+    //        if (time == 0)
+    //            continue;
+
+    //        if (time < start)
+    //            start = time;
+
+    //        if (time > end)
+    //            end = time;
+    //    }
+
+    //    if (end < start)
+    //        return false;
+
+    //    double rangeNs = static_cast<double>(end - start);
+
+    //    timingData[TimingType::TimeRange] = TimingEntry { .position = 0, .length = rangeNs };
+    //    UPDATE_TIMING_ENTRY(sim, Simulation)
+    //    UPDATE_TIMING_ENTRY(renderSubmit, RenderSubmit)
+    //    UPDATE_TIMING_ENTRY(present, Present)
+    //    UPDATE_TIMING_ENTRY(driver, Driver)
+    //    UPDATE_TIMING_ENTRY(osRenderQueue, OsRenderQueue)
+    //    UPDATE_TIMING_ENTRY(gpuRender, GpuRender)
+
+    //    if (frameReport.frameID != 0)
+    //        State::Instance().reflexFrameId = frameReport.frameID;
+
+    //    return true;
+    //};
+
+    // if (_lastSleepDev && o_NvAPI_D3D_GetLatency)
+    //{
+    //     // Not calling free on this but it's static so hopefully fine
+    //     static NV_LATENCY_RESULT_PARAMS* results = new NV_LATENCY_RESULT_PARAMS();
+    //     results->version = NV_LATENCY_RESULT_PARAMS_VER;
+
+    //    if (auto result = hkNvAPI_D3D_GetLatency(_lastSleepDev, results); result != NVAPI_OK)
+    //    {
+    //        LOG_WARN("NvAPI_D3D_GetLatency failed: {}", magic_enum::enum_name(result));
+    //        return false;
+    //    }
+
+    //    // 64th element has the latest data
+    //    return processFrameReport(results->frameReport[63]);
+    //}
+
+    // if (_lastVkSleepDev && o_NvAPI_Vulkan_GetLatency)
+    //{
+    //     // Not calling free on this but it's static so hopefully fine
+    //     static NV_VULKAN_LATENCY_RESULT_PARAMS* results = new NV_VULKAN_LATENCY_RESULT_PARAMS();
+    //     results->version = NV_VULKAN_LATENCY_RESULT_PARAMS_VER;
+
+    //    if (auto result = hkNvAPI_Vulkan_GetLatency(_lastVkSleepDev, results); result != NVAPI_OK)
+    //    {
+    //        LOG_WARN("NvAPI_Vulkan_GetLatency failed: {}", magic_enum::enum_name(result));
+    //        return false;
+    //    }
+
+    //    // 64th element has the latest data
+    //    return processFrameReport(results->frameReport[63]);
+    //}
+
+    {
+        size_t maxIdx = 0;
+        uint64_t maxID = frame_reports[0].frameID;
+        for (size_t i = 1; i < FRAME_REPORTS_BUFFER_SIZE; i++)
+        {
+            if (frame_reports[i].frameID > maxID)
+            {
+                maxID = frame_reports[i].frameID;
+                maxIdx = i;
+            }
+        }
+
+        auto highestValidId = (NVAPI_BUFFER_SIZE + maxIdx) % FRAME_REPORTS_BUFFER_SIZE;
+        auto& frameReport = frame_reports[highestValidId]; // grab last one
+
+        uint64_t start = UINT64_MAX;
+        uint64_t end = 0;
+
+        // Please don't look, just thought it would be least work
+        auto pTimes = (const uint64_t*) &frameReport.simStartTime;
+        for (auto i = 0; i < 11; i++)
+        {
+            auto& time = pTimes[i];
+            if (time == 0)
+                continue;
+
+            if (time < start)
+                start = time;
+
+            if (time > end)
+                end = time;
+        }
+
+        // No reports (an input without frame ids, or one that just changed) or just one marker
+        if (end <= start)
+        {
+            timingDataOut = {};
+            return false;
+        }
+
+        double rangeNs = static_cast<double>(end - start);
+
+        timingDataOut.timeRange = TimingEntry { .position = 0, .length = rangeNs };
+        UPDATE_TIMING_ENTRY(sim, simulation)
+        UPDATE_TIMING_ENTRY(renderSubmit, renderSubmit)
+        UPDATE_TIMING_ENTRY(present, present)
+        UPDATE_TIMING_ENTRY(driver, driver)
+        UPDATE_TIMING_ENTRY(osRenderQueue, osRenderQueue)
+        UPDATE_TIMING_ENTRY(gpuRender, gpuRender)
+
+        return true;
+    };
+
+    return false;
+}
+
+// GPU end of the presented frames, waited on by a worker thread for the overlay's PC latency
+namespace
+{
+struct PresentedFrame
+{
+    uint64_t simStartUs;
+    std::function<std::optional<uint64_t>()> waitGpuEnd; // Blocks until the frame's GPU work is done, its end time
+};
+
+std::mutex pclMutex;
+std::condition_variable pclCv;
+std::deque<PresentedFrame> pclPending;
+bool pclWorkerRunning = false;
+std::atomic_uint64_t pclRequestedUs = 0;
+
+// Simulation starts of inputs without frame ids (AntiLag 2, LatencyFlex), paired with the presents in order
+std::deque<uint64_t> pclSimStarts;
+
+// OptiScaler's frame generation presents a game frame after the game's present, as its generated frames and then
+// itself, while the game already presents the next one. The game frames waiting and the one being presented.
+struct FgGameFrame
+{
+    uint64_t simStartUs = 0;
+    uint32_t presents = 0;
+    uint32_t presented = 0;
+};
+
+std::deque<FgGameFrame> fgGameFrames;
+FgGameFrame fgPresentingFrame;
+std::atomic_uint64_t fgGamePresentUs = 0;
+
+// Simulation start to GPU end of the last measured frames: a game frame's first present (render) and every present
+// shown, generated ones too, with its game frame's simulation start (display, as PresentMon's PC latency)
+struct PclSample
+{
+    uint64_t endUs = 0;
+    uint32_t latencyUs = 0;
+};
+
+struct PclSamples
+{
+    std::array<PclSample, 512> samples {};
+    size_t count = 0;
+    size_t head = 0;
+
+    void Add(uint64_t endUs, uint32_t latencyUs)
+    {
+        samples[head] = { endUs, latencyUs };
+        head = (head + 1) % samples.size();
+        count = std::min(count + 1, samples.size());
+    }
+
+    // The ones that ended in the window before the newest, so the average follows the overlay's refresh
+    std::pair<uint64_t, uint32_t> Total(uint64_t windowUs) const
+    {
+        uint64_t totalUs = 0;
+        uint32_t taken = 0;
+
+        if (count == 0)
+            return { 0, 0 };
+
+        const uint64_t newestUs = samples[(head + samples.size() - 1) % samples.size()].endUs;
+
+        for (size_t i = 1; i <= count; i++)
+        {
+            const auto& sample = samples[(head + samples.size() - i) % samples.size()];
+
+            if (newestUs - sample.endUs > windowUs)
+                break;
+
+            totalUs += sample.latencyUs;
+            taken++;
+        }
+
+        return { totalUs, taken };
+    }
+};
+
+PclSamples pclLatencies;
+PclSamples pclPresentLatencies;
+uint64_t pclLastMeasuredUs = 0;
+constexpr uint64_t pclAverageUs = 500'000;
+
+// Frames are only tracked while the overlay asks for the latency
+constexpr uint64_t pclIdleUs = 2'000'000;
+constexpr size_t pclMaxPending = 8;
+constexpr uint64_t pclMaxLatencyUs = 1'000'000;
+
+uint64_t NowUs() { return Util::GetTimestamp() / 1000; }
+
+struct ThreadEvent
+{
+    HANDLE handle = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    ~ThreadEvent()
+    {
+        if (handle != nullptr)
+            CloseHandle(handle);
+    }
+};
+
+// D3D12 and D3D11 fences share these calls
+template <typename TFence> bool WaitForFence(TFence* fence, uint64_t value)
+{
+    thread_local ThreadEvent event;
+
+    bool done = fence->GetCompletedValue() >= value;
+
+    if (!done && event.handle != nullptr && fence->SetEventOnCompletion(value, event.handle) == S_OK)
+        done = WaitForSingleObject(event.handle, 500) == WAIT_OBJECT_0;
+
+    // UINT64_MAX after a device removal
+    return done && fence->GetCompletedValue() != UINT64_MAX;
+}
+
+template <typename TFence> std::shared_ptr<TFence> SharedFence(TFence* fence)
+{
+    fence->AddRef();
+    return std::shared_ptr<TFence>(fence, [](TFence* f) { f->Release(); });
+}
+
+void PclWorker()
+{
+    // Without GPU timestamps the frame ends when this thread wakes up, which a busy CPU delays
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+
+    std::unique_lock lock(pclMutex);
+
+    while (true)
+    {
+        if (!pclCv.wait_for(lock, std::chrono::seconds(1), [] { return !pclPending.empty(); }))
+        {
+            if (NowUs() - pclRequestedUs > pclIdleUs)
+                break;
+
+            continue;
+        }
+
+        auto frame = std::move(pclPending.front());
+        pclPending.pop_front();
+        lock.unlock();
+
+        const auto gpuEndUs = frame.waitGpuEnd();
+        frame.waitGpuEnd = nullptr;
+
+        lock.lock();
+
+        if (!gpuEndUs.has_value())
+            continue;
+
+        const auto endUs = gpuEndUs.value();
+
+        if (endUs <= frame.simStartUs || endUs - frame.simStartUs >= pclMaxLatencyUs)
+            continue;
+
+        // PresentMon gives every present shown its own PC latency, a generated one takes the game frame's simulation
+        // start as the real one after it does
+        const uint32_t elapsedUs = static_cast<uint32_t>(endUs - frame.simStartUs);
+
+        pclPresentLatencies.Add(endUs, elapsedUs);
+        pclLastMeasuredUs = endUs;
+
+        // A game frame's presents end in order: with frame generation its first present ends right after the game's
+        // base render and frame generation pass finish on the GPU
+        static uint64_t frameSimStartUs = 0;
+
+        if (frame.simStartUs == frameSimStartUs && pclLatencies.count > 0)
+            continue;
+
+        frameSimStartUs = frame.simStartUs;
+        pclLatencies.Add(endUs, elapsedUs);
+    }
+
+    pclWorkerRunning = false;
+}
+} // namespace
+
+bool InputCommon::pcl_requested() { return NowUs() - pclRequestedUs <= pclIdleUs; }
+
+bool InputCommon::pcl_tracking()
+{
+    if (!pcl_requested())
+        return false;
+
+    // The worker falls behind only if the GPU stalls, skip frames rather than queue them
+    std::lock_guard lock(pclMutex);
+    return pclPending.size() < pclMaxPending;
+}
+
+void InputCommon::note_sim_start_without_id()
+{
+    if (!pcl_tracking())
+        return;
+
+    const auto nowUs = NowUs();
+    std::lock_guard lock(pclMutex);
+
+    // Older ones lost their present
+    while (!pclSimStarts.empty() && (nowUs - pclSimStarts.front() > pclMaxLatencyUs || pclSimStarts.size() >= 8))
+        pclSimStarts.pop_front();
+
+    pclSimStarts.push_back(nowUs);
+}
+
+std::optional<uint64_t> InputCommon::game_present_sim_start()
+{
+    // The frame the game presents, by its id
+    const uint64_t frameId = last_present_start_frame_id;
+    const auto& report = frame_reports[frameId % FRAME_REPORTS_BUFFER_SIZE];
+
+    if (frameId != 0 && report.frameID == frameId && report.simStartTime != 0)
+        return report.simStartTime;
+
+    // Without ids the oldest simulation start belongs to this present
+    std::lock_guard lock(pclMutex);
+
+    if (pclSimStarts.empty())
+        return std::nullopt;
+
+    auto simStartUs = pclSimStarts.front();
+    pclSimStarts.pop_front();
+
+    return simStartUs;
+}
+
+// The overlay's pings, as PC Latency Stats sends them for FrameView: a message the game marks the next frame with
+namespace
+{
+std::mutex pingMutex;
+uint64_t pingSentUs = 0;      // Sent and not marked yet
+uint64_t pingFrameId = 0;     // Marked, waiting for the frame's simulation start
+uint64_t pingFrameSentUs = 0; //
+double pingEmaMs = 0.0;
+uint32_t pingSamples = 0;
+std::atomic_bool pingThreadRunning = false;
+
+void AddPingSample(uint64_t sentUs, uint64_t simStartUs)
+{
+    const double ms = (simStartUs - sentUs) / 1000.0;
+
+    // PresentMon's average of the input to frame start
+    pingEmaMs = pingSamples == 0 ? ms : pingEmaMs + 0.1 * (ms - pingEmaMs);
+    pingSamples++;
+}
+
+void PingThread()
+{
+    const UINT pingMessage = RegisterWindowMessageW(L"PC_Latency_Stats_Ping");
+    std::minstd_rand random(GetCurrentThreadId());
+    std::uniform_int_distribution<DWORD> interval(100, 300);
+
+    while (pingMessage != 0 && InputCommon::pcl_requested())
+    {
+        Sleep(interval(random));
+
+        // Only the game's window when it's in the foreground
+        HWND hwnd = GetForegroundWindow();
+        DWORD processId = 0;
+
+        if (hwnd == nullptr || GetWindowThreadProcessId(hwnd, &processId) == 0 || processId != GetCurrentProcessId())
+            continue;
+
+        {
+            std::lock_guard lock(pingMutex);
+            pingSentUs = NowUs();
+        }
+
+        PostMessageW(hwnd, pingMessage, 0, 0);
+    }
+
+    pingThreadRunning = false;
+}
+} // namespace
+
+void InputCommon::note_latency_ping(uint64_t frameId)
+{
+    std::lock_guard lock(pingMutex);
+
+    // The game's own pings (when FrameView runs) have no send time here
+    const auto sentUs = pingSentUs;
+    if (sentUs == 0 || NowUs() - sentUs > 1'000'000)
+        return;
+
+    pingSentUs = 0;
+
+    const auto& report = frame_reports[frameId % FRAME_REPORTS_BUFFER_SIZE];
+
+    // Usually the frame starts after the ping, else it's the next frame's start
+    if (report.frameID == frameId && report.simStartTime >= sentUs)
+    {
+        AddPingSample(sentUs, report.simStartTime);
+        pingFrameId = 0;
+        return;
+    }
+
+    pingFrameId = frameId;
+    pingFrameSentUs = sentUs;
+}
+
+void InputCommon::note_ping_sim_start(uint64_t frameId)
+{
+    std::lock_guard lock(pingMutex);
+
+    if (pingFrameId == 0 || frameId < pingFrameId)
+        return;
+
+    const auto& report = frame_reports[frameId % FRAME_REPORTS_BUFFER_SIZE];
+
+    if (report.frameID != frameId || report.simStartTime < pingFrameSentUs)
+        return;
+
+    if (report.simStartTime - pingFrameSentUs < 1'000'000)
+        AddPingSample(pingFrameSentUs, report.simStartTime);
+
+    pingFrameId = 0;
+}
+
+std::optional<double> InputCommon::get_input_wait_ms(uint32_t* pings)
+{
+    if (!pingThreadRunning.exchange(true))
+        std::thread(PingThread).detach();
+
+    std::lock_guard lock(pingMutex);
+
+    if (pings != nullptr)
+        *pings = pingSamples;
+
+    if (pingSamples == 0)
+        return std::nullopt;
+
+    return pingEmaMs;
+}
+
+void InputCommon::note_fg_game_present(uint32_t frameMultiplier)
+{
+    if (!pcl_requested())
+        return;
+
+    const auto simStartUs = game_present_sim_start();
+
+    std::lock_guard lock(pclMutex);
+    fgGamePresentUs = NowUs();
+
+    // A few wait at most, more and the frame generation didn't present some
+    while (fgGameFrames.size() >= 3)
+        fgGameFrames.pop_front();
+
+    fgGameFrames.push_back({ simStartUs.value_or(0), std::max(frameMultiplier, 1u), 0 });
+}
+
+void InputCommon::fg_game_presents(uint32_t presents)
+{
+    if (!pcl_requested())
+        return;
+
+    std::lock_guard lock(pclMutex);
+
+    if (presents == 0)
+    {
+        if (!fgGameFrames.empty())
+            fgGameFrames.pop_back();
+        else
+            fgPresentingFrame.presented = fgPresentingFrame.presents;
+
+        return;
+    }
+
+    // The frame it was given last, it may already be the one presenting
+    if (!fgGameFrames.empty())
+        fgGameFrames.back().presents = presents;
+    else
+        fgPresentingFrame.presents = presents;
+}
+
+std::optional<uint64_t> InputCommon::take_present_sim_start()
+{
+    // Without OptiScaler's frame generation swapchain the game presents here itself
+    if (NowUs() - fgGamePresentUs > 500'000)
+        return game_present_sim_start();
+
+    std::lock_guard lock(pclMutex);
+
+    // The next game frame once this one has all its presents, catching up when more wait than usual
+    if (fgPresentingFrame.presented >= fgPresentingFrame.presents && !fgGameFrames.empty())
+    {
+        while (fgGameFrames.size() > 1)
+            fgGameFrames.pop_front();
+
+        fgPresentingFrame = fgGameFrames.front();
+        fgGameFrames.pop_front();
+    }
+
+    fgPresentingFrame.presented++;
+
+    if (fgPresentingFrame.simStartUs == 0)
+        return std::nullopt;
+
+    return fgPresentingFrame.simStartUs;
+}
+
+namespace
+{
+void QueuePresentedFrame(uint64_t simStartUs, std::function<std::optional<uint64_t>()> waitGpuEnd)
+{
+    std::lock_guard lock(pclMutex);
+
+    // Every wait is queued, the callers checked pcl_tracking() for room before signaling
+    pclPending.push_back({ simStartUs, std::move(waitGpuEnd) });
+
+    if (!pclWorkerRunning)
+    {
+        pclWorkerRunning = true;
+        std::thread(PclWorker).detach();
+    }
+
+    pclCv.notify_one();
+}
+
+// A timestamp the present's queue writes after the present, the GPU's own time of its end. The slots are reused once
+// the worker read them, more than the frames it can have queued and waiting.
+constexpr size_t pclTimestampSlots = 2 * pclMaxPending + 2;
+
+struct GpuTimestamps
+{
+    ID3D12CommandQueue* queue = nullptr;
+    ID3D12QueryHeap* heap = nullptr;
+    ID3D12Resource* readback = nullptr;
+    const uint64_t* results = nullptr;
+    ID3D12Fence* fence = nullptr;
+    uint64_t fenceValue = 0;
+    uint64_t frequency = 0;
+    size_t nextSlot = 0;
+    std::array<ID3D12CommandAllocator*, pclTimestampSlots> allocators {};
+    std::array<ID3D12GraphicsCommandList*, pclTimestampSlots> lists {};
+    std::array<uint64_t, pclTimestampSlots> slotFenceValues {};
+    std::array<std::atomic_bool, pclTimestampSlots> slotRead {};
+
+    ~GpuTimestamps()
+    {
+        // Lists the GPU may still run are left alone, after a hang or a device removal
+        if (fence != nullptr && fenceValue != 0 && !WaitForFence(fence, fenceValue))
+            return;
+
+        for (auto list : lists)
+        {
+            if (list != nullptr)
+                list->Release();
+        }
+
+        for (auto allocator : allocators)
+        {
+            if (allocator != nullptr)
+                allocator->Release();
+        }
+
+        if (readback != nullptr)
+        {
+            if (results != nullptr)
+                readback->Unmap(0, nullptr);
+
+            readback->Release();
+        }
+
+        if (heap != nullptr)
+            heap->Release();
+
+        if (fence != nullptr)
+            fence->Release();
+
+        if (queue != nullptr)
+            queue->Release();
+    }
+
+    bool Init(ID3D12CommandQueue* presentQueue, ID3D12Device* device)
+    {
+        const auto queueDesc = presentQueue->GetDesc();
+        D3D12_QUERY_HEAP_DESC heapDesc {};
+        heapDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+        heapDesc.Count = static_cast<UINT>(pclTimestampSlots);
+
+        // A copy queue only has timestamps where the driver supports them
+        if (queueDesc.Type == D3D12_COMMAND_LIST_TYPE_COPY)
+        {
+            D3D12_FEATURE_DATA_D3D12_OPTIONS3 options3 {};
+            if (device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS3, &options3, sizeof(options3)) != S_OK ||
+                !options3.CopyQueueTimestampQueriesSupported)
+            {
+                return false;
+            }
+
+            heapDesc.Type = D3D12_QUERY_HEAP_TYPE_COPY_QUEUE_TIMESTAMP;
+        }
+        else if (queueDesc.Type != D3D12_COMMAND_LIST_TYPE_DIRECT && queueDesc.Type != D3D12_COMMAND_LIST_TYPE_COMPUTE)
+        {
+            return false;
+        }
+
+        presentQueue->AddRef();
+        queue = presentQueue;
+
+        if (queue->GetTimestampFrequency(&frequency) != S_OK || frequency == 0)
+            return false;
+
+        if (device->CreateQueryHeap(&heapDesc, IID_PPV_ARGS(&heap)) != S_OK)
+            return false;
+
+        D3D12_HEAP_PROPERTIES heapProps {};
+        heapProps.Type = D3D12_HEAP_TYPE_READBACK;
+
+        D3D12_RESOURCE_DESC bufferDesc {};
+        bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        bufferDesc.Width = sizeof(uint64_t) * pclTimestampSlots;
+        bufferDesc.Height = 1;
+        bufferDesc.DepthOrArraySize = 1;
+        bufferDesc.MipLevels = 1;
+        bufferDesc.SampleDesc.Count = 1;
+        bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+        if (device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+                                            D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback)) != S_OK)
+        {
+            return false;
+        }
+
+        // Readback buffers can stay mapped, every read waits for the slot's fence
+        void* mapped = nullptr;
+        if (readback->Map(0, nullptr, &mapped) != S_OK)
+            return false;
+
+        results = static_cast<const uint64_t*>(mapped);
+
+        if (device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)) != S_OK)
+            return false;
+
+        for (size_t i = 0; i < pclTimestampSlots; i++)
+        {
+            if (device->CreateCommandAllocator(queueDesc.Type, IID_PPV_ARGS(&allocators[i])) != S_OK ||
+                device->CreateCommandList(0, queueDesc.Type, allocators[i], nullptr, IID_PPV_ARGS(&lists[i])) != S_OK ||
+                lists[i]->Close() != S_OK)
+            {
+                return false;
+            }
+
+            slotRead[i] = true;
+        }
+
+        return true;
+    }
+
+    // The slot written after the present and its fence value, nullopt when it can't be written
+    std::optional<std::pair<size_t, uint64_t>> Write()
+    {
+        const size_t slot = nextSlot;
+
+        // Still waited on by the worker or the GPU
+        if (!slotRead[slot] || fence->GetCompletedValue() < slotFenceValues[slot])
+            return std::nullopt;
+
+        auto list = lists[slot];
+
+        if (allocators[slot]->Reset() != S_OK || list->Reset(allocators[slot], nullptr) != S_OK)
+            return std::nullopt;
+
+        const auto index = static_cast<UINT>(slot);
+        list->EndQuery(heap, D3D12_QUERY_TYPE_TIMESTAMP, index);
+        list->ResolveQueryData(heap, D3D12_QUERY_TYPE_TIMESTAMP, index, 1, readback, sizeof(uint64_t) * slot);
+
+        if (list->Close() != S_OK)
+            return std::nullopt;
+
+        ID3D12CommandList* submit[] = { list };
+        queue->ExecuteCommandLists(1, submit);
+
+        if (queue->Signal(fence, fenceValue + 1) != S_OK)
+            return std::nullopt;
+
+        slotFenceValues[slot] = ++fenceValue;
+        slotRead[slot] = false;
+        nextSlot = (slot + 1) % pclTimestampSlots;
+
+        return std::pair(slot, fenceValue);
+    }
+
+    // The slot's GPU time as NowUs(), from the queue's GPU clock and the CPU's taken together
+    std::optional<uint64_t> Read(size_t slot, uint64_t value)
+    {
+        std::optional<uint64_t> endUs;
+
+        if (WaitForFence(fence, value))
+        {
+            const uint64_t ticks = results[slot];
+            uint64_t gpuNow = 0;
+            uint64_t cpuNow = 0;
+
+            if (ticks != 0 && queue->GetClockCalibration(&gpuNow, &cpuNow) == S_OK && gpuNow >= ticks)
+            {
+                // The calibration's QPC time to now, so a preemption in between doesn't count
+                LARGE_INTEGER qpcNow {};
+                LARGE_INTEGER qpcFrequency {};
+                QueryPerformanceCounter(&qpcNow);
+                QueryPerformanceFrequency(&qpcFrequency);
+                const auto nowUs = NowUs();
+
+                const double sinceCalibrationUs =
+                    qpcNow.QuadPart > static_cast<LONGLONG>(cpuNow)
+                        ? (qpcNow.QuadPart - static_cast<LONGLONG>(cpuNow)) * 1'000'000.0 / qpcFrequency.QuadPart
+                        : 0.0;
+
+                const auto agoUs =
+                    static_cast<uint64_t>((gpuNow - ticks) * 1'000'000.0 / frequency + sinceCalibrationUs);
+
+                if (agoUs < nowUs)
+                    endUs = nowUs - agoUs;
+            }
+        }
+
+        slotRead[slot] = true;
+        return endUs;
+    }
+};
+} // namespace
+
+void InputCommon::track_present_gpu_end(uint64_t simStartUs, std::function<bool()> waitGpuEnd)
+{
+    QueuePresentedFrame(simStartUs,
+                        [wait = std::move(waitGpuEnd)]() -> std::optional<uint64_t>
+                        {
+                            if (!wait())
+                                return std::nullopt;
+
+                            return NowUs();
+                        });
+}
+
+void InputCommon::track_present_gpu_end(ID3D12CommandQueue* queue)
+{
+    // Every present takes its simulation start, the frame generation's are counted
+    if (queue == nullptr || !pcl_requested())
+        return;
+
+    auto simStartUs = take_present_sim_start();
+    if (!simStartUs.has_value() || !pcl_tracking())
+        return;
+
+    // Timestamps on the present's queue, new ones when it changes (another swapchain or device)
+    // Never freed, at the process' exit D3D12 may already be gone
+    static std::mutex timestampsMutex;
+    static auto& timestamps = *new std::shared_ptr<GpuTimestamps>();
+    static ID3D12CommandQueue* failedQueue = nullptr;
+
+    std::unique_lock lock(timestampsMutex);
+
+    if ((timestamps == nullptr || timestamps->queue != queue) && failedQueue != queue)
+    {
+        timestamps = nullptr;
+
+        ID3D12Device* device = nullptr;
+        if (queue->GetDevice(IID_PPV_ARGS(&device)) != S_OK)
+            return;
+
+        auto created = std::make_shared<GpuTimestamps>();
+
+        if (created->Init(queue, device))
+        {
+            timestamps = std::move(created);
+        }
+        else
+        {
+            LOG_WARN("No GPU timestamps on the present's queue, PC latency skipped");
+            failedQueue = queue;
+        }
+
+        device->Release();
+    }
+
+    if (timestamps == nullptr || timestamps->queue != queue)
+        return;
+
+    const auto written = timestamps->Write();
+    if (!written.has_value())
+        return;
+
+    auto shared = timestamps;
+    lock.unlock();
+
+    QueuePresentedFrame(simStartUs.value(), [shared, slot = written->first, value = written->second]()
+                        { return shared->Read(slot, value); });
+}
+
+void InputCommon::track_present_gpu_end(ID3D11Device* device)
+{
+    // Every present takes its simulation start, the frame generation's are counted
+    if (device == nullptr || !pcl_requested())
+        return;
+
+    auto simStartUs = take_present_sim_start();
+    if (!simStartUs.has_value() || !pcl_tracking())
+        return;
+
+    // ID3D11Fence needs Windows 10 1703, the game's present submits the signal
+    static std::mutex fenceMutex;
+    static ID3D11Fence* fence = nullptr;
+    static uint64_t fenceValue = 0;
+
+    std::unique_lock lock(fenceMutex);
+
+    ID3D11Device* fenceDevice = nullptr;
+    if (fence != nullptr)
+        fence->GetDevice(&fenceDevice);
+
+    if (fenceDevice != device)
+    {
+        if (fence != nullptr)
+            fence->Release();
+
+        fence = nullptr;
+        fenceValue = 0;
+
+        ID3D11Device5* device5 = nullptr;
+        if (device->QueryInterface(IID_PPV_ARGS(&device5)) == S_OK)
+        {
+            if (device5->CreateFence(0, D3D11_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)) != S_OK)
+                fence = nullptr;
+
+            device5->Release();
+        }
+    }
+
+    if (fenceDevice != nullptr)
+        fenceDevice->Release();
+
+    if (fence == nullptr)
+        return;
+
+    ID3D11DeviceContext* context = nullptr;
+    device->GetImmediateContext(&context);
+
+    ID3D11DeviceContext4* context4 = nullptr;
+    bool signaled = false;
+
+    if (context != nullptr && context->QueryInterface(IID_PPV_ARGS(&context4)) == S_OK)
+    {
+        signaled = context4->Signal(fence, fenceValue + 1) == S_OK;
+        context4->Release();
+    }
+
+    if (context != nullptr)
+        context->Release();
+
+    if (!signaled)
+        return;
+
+    const uint64_t value = ++fenceValue;
+    auto sharedFence = SharedFence(fence);
+    lock.unlock();
+
+    track_present_gpu_end(simStartUs.value(),
+                          [sharedFence, value]() { return WaitForFence(sharedFence.get(), value); });
+}
+
+void InputCommon::note_game_present_ms(double ms, bool frameGenSwapchain)
+{
+    // With a frame generation swapchain the real swapchain's presents are the generated and real frames
+    static std::atomic_uint64_t lastFrameGenUs = 0;
+    const auto nowUs = NowUs();
+
+    if (frameGenSwapchain)
+        lastFrameGenUs = nowUs;
+    else if (nowUs - lastFrameGenUs < 500'000)
+        return;
+
+    overlay_present_us += static_cast<uint64_t>(std::max(ms, 0.0) * 1000.0);
+    overlay_presents++;
+}
+
+std::optional<double> InputCommon::take_overlay_wait_ms()
+{
+    const auto sleepUs = overlay_sleep_us.exchange(0);
+    const auto sleeps = overlay_sleeps.exchange(0);
+    const auto presentUs = overlay_present_us.exchange(0);
+    const auto presents = overlay_presents.exchange(0);
+
+    if (presents == 0)
+        return std::nullopt;
+
+    double waitMs = static_cast<double>(presentUs) / presents / 1000.0;
+
+    if (sleeps != 0 && activeOutput != LowLatencyMode::None)
+        waitMs += static_cast<double>(sleepUs) / sleeps / 1000.0;
+
+    return waitMs;
+}
+
+std::optional<double> InputCommon::get_pc_latency_ms(PcLatencySource& source, double* displayEndMs)
+{
+    pclRequestedUs = NowUs();
+
+    uint64_t totalUs = 0;
+    uint64_t totalDisplayUs = 0;
+    uint32_t count = 0;
+
+    auto addFrame = [&](uint64_t startUs, uint64_t endUs)
+    {
+        // Unfinished frames and leftovers of a previous run
+        if (startUs == 0 || endUs <= startUs || endUs - startUs > 1'000'000)
+            return;
+
+        totalUs += endUs - startUs;
+        totalDisplayUs += endUs - startUs;
+        count++;
+    };
+
+    source = PcLatencySource::None;
+
+    if (activeOutput == LowLatencyMode::Reflex)
+    {
+        auto tech = currently_active_tech.load();
+
+        if (auto reflex_tech = std::dynamic_pointer_cast<Reflex>(tech))
+        {
+            static NV_LATENCY_RESULT_PARAMS results {};
+            results.version = NV_LATENCY_RESULT_PARAMS_VER1;
+
+            if (reflex_tech->get_latency(&results) == NVAPI_OK)
+            {
+                for (const auto& report : results.frameReport)
+                    addFrame(report.simStartTime, report.gpuRenderEndTime);
+            }
+        }
+        else if (auto reflex_vk = std::dynamic_pointer_cast<ReflexVk>(tech))
+        {
+            static std::array<VkLatencyTimingsFrameReportNV, NVAPI_BUFFER_SIZE> timings {};
+
+            for (auto& timing : timings)
+                timing = { VK_STRUCTURE_TYPE_LATENCY_TIMINGS_FRAME_REPORT_NV };
+
+            VkGetLatencyMarkerInfoNV info { VK_STRUCTURE_TYPE_GET_LATENCY_MARKER_INFO_NV };
+            info.timingCount = static_cast<uint32_t>(timings.size());
+            info.pTimings = timings.data();
+
+            if (reflex_vk->get_latency(&info) == VK_SUCCESS)
+            {
+                for (uint32_t i = 0; i < std::min(info.timingCount, static_cast<uint32_t>(timings.size())); i++)
+                    addFrame(timings[i].simStartTimeUs, timings[i].gpuRenderEndTimeUs);
+            }
+        }
+    }
+
+    // The GPU end of the presents measures the frames that are shown, with frame generation a game frame's first
+    // present for render latency and every present for displayEndMs. The driver's reports end at the game's own GPU
+    // work.
+    uint32_t displayCount = 0;
+
+    {
+        std::lock_guard lock(pclMutex);
+
+        if (pclLatencies.count != 0 && NowUs() - pclLastMeasuredUs < 1'000'000)
+        {
+            const auto render = pclLatencies.Total(pclAverageUs);
+            const auto display = pclPresentLatencies.Total(pclAverageUs);
+
+            totalUs = render.first;
+            count = render.second;
+            totalDisplayUs = display.first;
+            displayCount = display.second;
+            source = PcLatencySource::GpuFence;
+        }
+    }
+
+    if (count != 0 && source == PcLatencySource::None)
+        source = PcLatencySource::Driver;
+
+    // Without either only the CPU side markers are real, up to the present's end
+    if (count == 0)
+    {
+        for (const auto& report : frame_reports)
+            addFrame(report.simStartTime, report.presentEndTime);
+
+        if (count != 0)
+            source = PcLatencySource::Estimated;
+    }
+
+    if (count == 0)
+        return std::nullopt;
+
+    // The reports have one end for both
+    if (displayEndMs != nullptr)
+        *displayEndMs = static_cast<double>(totalDisplayUs) / (displayCount != 0 ? displayCount : count) / 1000.0;
+
+    return static_cast<double>(totalUs) / count / 1000.0;
+}
+
+// As DLSSG: async present markers on the game's queue around the game's present, with the frame multiplier for
+// Reflex Sync in between. Every marker uses the game's frame id.
+void InputCommon::fg_game_present(ID3D12CommandQueue* gameQueue, bool presented, uint32_t frameMultiplier)
+{
+    auto reflex_tech = std::dynamic_pointer_cast<Reflex>(currently_active_tech.load());
+
+    if (reflex_tech == nullptr || gameQueue == nullptr)
+        return;
+
+    uint64_t frame_id = last_present_start_frame_id;
+    reflex_tech->set_async_marker(gameQueue,
+                                  { frame_id, presented ? MarkerType::PRESENT_END : MarkerType::PRESENT_START });
+
+    if (!presented)
+    {
+        reflex_tech->set_reflex_sync(frameMultiplier);
+        fg_frame_id = frame_id;
+        fg_new_batch = true;
+    }
+}
+
+bool InputCommon::output_reports_fg_multiplier()
+{
+    auto reflex_tech = std::dynamic_pointer_cast<Reflex>(currently_active_tech.load());
+    return reflex_tech != nullptr && reflex_tech->has_reflex_sync();
+}
+
+// XeFG presents each batch on its own thread, paced over the game's frame, while the game already submits the next
+// one. Each batch keeps the frame id XeFG marked it with and the number of frames XeFG sends for it.
+namespace
+{
+struct XeFGBatch
+{
+    uint64_t frame_id = 0;
+    uint32_t frames = 0; // The multiplier until XeFG reports its own count after the game's present
+    uint32_t presented = 0;
+};
+
+std::mutex xefg_batch_mutex;
+std::deque<XeFGBatch> xefg_batches; // Marked, not presented yet
+XeFGBatch xefg_batch;               // Presenting
+constexpr size_t xefg_max_batches = 8;
+
+void reset_xefg_batches()
+{
+    std::scoped_lock lock(xefg_batch_mutex);
+    xefg_batches.clear();
+    xefg_batch = {};
+}
+} // namespace
+
+// As DLSSG on its present thread: out of band render submit markers around each batch of generated and real
+// frames, out of band present markers around each of their presents, all with the game's frame id
+void InputCommon::fg_output_present(ID3D12CommandQueue* presentQueue, bool presented, uint32_t frameMultiplier)
+{
+    // Only the FG presenter thread calls this
+    static uint64_t batchFrameId = 0;
+    static uint32_t batchPresents = 0;
+    static bool batchOpen = false;
+
+    // XeFG marks its batches itself (xefg_marker), each of its presents carries the frame id of its batch. The out of
+    // band presents also give AntiLag 2 the frame type, FSR-FG tells AntiLag 2 itself
+    // (InputAntiLag2::injectAl2Context).
+    if (State::Instance().activeFgOutput == FGOutput::XeFG)
+    {
+        if (presentQueue == nullptr)
+            return;
+
+        if (xefg_present_queue.load() != presentQueue)
+        {
+            presentQueue->AddRef();
+
+            if (auto old = xefg_present_queue.exchange(presentQueue))
+                old->Release();
+        }
+
+        auto tech = currently_active_tech.load();
+
+        if (xefg_xell.load() == nullptr || tech == nullptr)
+            return;
+
+        uint64_t frame_id = 0;
+
+        {
+            std::scoped_lock lock(xefg_batch_mutex);
+
+            // The next batch once this one has all its frames, without a next one it's still this one's
+            if (!presented && xefg_batch.presented >= xefg_batch.frames && !xefg_batches.empty())
+            {
+                xefg_batch = xefg_batches.front();
+                xefg_batches.pop_front();
+            }
+            else if (presented && xefg_batch.frame_id != 0)
+            {
+                xefg_batch.presented++;
+            }
+
+            frame_id = xefg_batch.frame_id;
+        }
+
+        if (frame_id != 0)
+        {
+            tech->set_async_marker(presentQueue, { frame_id, presented ? MarkerType::OUT_OF_BAND_PRESENT_END
+                                                                       : MarkerType::OUT_OF_BAND_PRESENT_START });
+        }
+
+        return;
+    }
+
+    auto reflex_tech = std::dynamic_pointer_cast<Reflex>(currently_active_tech.load());
+
+    if (reflex_tech == nullptr || presentQueue == nullptr)
+        return;
+
+    auto send = [&](MarkerType type) { reflex_tech->set_async_marker(presentQueue, { batchFrameId, type }); };
+
+    if (!presented && fg_new_batch.exchange(false))
+    {
+        // A batch cut short still gets its end
+        if (batchOpen)
+            send(MarkerType::OUT_OF_BAND_RENDERSUBMIT_END);
+
+        batchFrameId = fg_frame_id;
+        batchPresents = 0;
+        batchOpen = true;
+        send(MarkerType::OUT_OF_BAND_RENDERSUBMIT_START);
+    }
+
+    if (batchFrameId == 0)
+        return;
+
+    send(presented ? MarkerType::OUT_OF_BAND_PRESENT_END : MarkerType::OUT_OF_BAND_PRESENT_START);
+
+    if (presented && batchOpen && ++batchPresents >= frameMultiplier)
+    {
+        send(MarkerType::OUT_OF_BAND_RENDERSUBMIT_END);
+        batchOpen = false;
+    }
+}
+
+// AntiLag 2 only knows the generated frames from the frame type set right before each present. DLSSG's out of band
+// present markers don't give a usable one with more than 1 generated frame, like OptiScaler's XeFG (fg_output_present)
+// the presents themselves do: the first of each batch as the real frame.
+bool InputCommon::dlssg_types_presents()
+{
+    auto fgOutput = State::Instance().activeFgOutput;
+
+    return activeOutput == LowLatencyMode::AntiLag2 && fgOutput != FGOutput::FSRFG && fgOutput != FGOutput::XeFG &&
+           State::Instance().dlssgDetectedInterpolationCount > 0;
+}
+
+void InputCommon::dlssg_present()
+{
+    // Only the present thread calls this
+    static uint32_t presents = 0;
+
+    if (!dlssg_types_presents())
+    {
+        presents = 0;
+        return;
+    }
+
+    auto tech = currently_active_tech.load();
+
+    if (tech == nullptr)
+        return;
+
+    auto frames = static_cast<uint32_t>(State::Instance().dlssgDetectedInterpolationCount) + 1;
+    bool interpolated = presents++ % frames != 0;
+
+    tech->set_async_marker(nullptr, { 0, MarkerType::OUT_OF_BAND_PRESENT_START, interpolated });
+}
+
+void InputCommon::xefg_marker(void* xellContext, uint32_t frame_id, uint32_t marker)
+{
+    static std::atomic_bool seen[2] {};
+
+    MarkerType type;
+
+    if (marker == 80860000)
+        type = MarkerType::OUT_OF_BAND_RENDERSUBMIT_START;
+    else if (marker == 80860001)
+        type = MarkerType::OUT_OF_BAND_RENDERSUBMIT_END;
+    else
+    {
+        LOG_WARN("Unknown XeFG XeLL marker {} for frame id {}", marker, frame_id);
+        return;
+    }
+
+    auto index = marker - 80860000;
+
+    if (!seen[index].exchange(true))
+        LOG_INFO("XeFG sends XeLL marker {} ({}), frame id {}", marker, magic_enum::enum_name(type), frame_id);
+
+    LOG_TRACE_LOWLATENCY("XeFG {}: {}", magic_enum::enum_name(type), frame_id);
+
+    auto own = xefg_xell.load();
+    const bool isOwnContext = own != nullptr && own->get_tech_context() == xellContext;
+
+    if (!isOwnContext && xellContext != xell_output_context())
+        return;
+
+    // Without generated frames XeFG sends both right away, DLSSG doesn't send them
+    auto fg = State::Instance().currentFG;
+
+    if (fg == nullptr || !fg->IsActive() || fg->IsPaused())
+    {
+        reset_xefg_batches();
+        return;
+    }
+
+    if (type == MarkerType::OUT_OF_BAND_RENDERSUBMIT_START)
+    {
+        xefg_frame_id = frame_id;
+
+        if (isOwnContext)
+        {
+            std::scoped_lock lock(xefg_batch_mutex);
+
+            // Nothing takes them while XeFG's presents don't reach the wrapped swapchain, only the latest few are kept
+            if (xefg_batches.size() >= xefg_max_batches)
+                xefg_batches.pop_front();
+
+            xefg_batches.push_back({ frame_id, fg->GetInterpolatedFrameCount() + 1 });
+        }
+    }
+
+    // Only XeFG's own context next to a Reflex or AntiLag 2 output, the XeLL output's context has them already
+    if (!isOwnContext)
+        return;
+
+    // Known after XeFG's first present
+    auto queue = xefg_present_queue.load();
+
+    if (auto tech = currently_active_tech.load(); tech != nullptr && queue != nullptr)
+        tech->set_async_marker(queue, { frame_id, type });
+}
+
+// After the game's present: XeFG's own count for the batch it marked during it. The multiplier can be off, for a
+// frame it couldn't generate or a changed frame count.
+void InputCommon::xefg_present_status(uint64_t frameIdBefore, uint32_t framesPresented)
+{
+    auto frame_id = xefg_frame_id.load();
+
+    if (frame_id == 0 || frame_id == frameIdBefore || framesPresented == 0)
+        return;
+
+    std::scoped_lock lock(xefg_batch_mutex);
+
+    XeFGBatch* batch = xefg_batch.frame_id == frame_id ? &xefg_batch : nullptr;
+
+    for (auto it = xefg_batches.rbegin(); batch == nullptr && it != xefg_batches.rend(); ++it)
+    {
+        if (it->frame_id == frame_id)
+            batch = &*it;
+    }
+
+    if (batch != nullptr)
+        batch->frames = framesPresented;
+}
+
+void InputCommon::apply_sleep_mode(LowLatencyTech* tech)
+{
+    auto sleepMode = get_sleep_copy(activeInput);
+
+    if (auto interval = fps_limit_interval_us.load(); interval != 0)
+        sleepMode.minimum_interval_us = interval;
+
+    tech->set_sleep_mode(&sleepMode);
+}
+
+void InputCommon::update()
+{
+    auto& state = State::Instance();
+    auto current_tech = currently_active_tech.load();
+    bool active = false;
+    ++present_count;
+
+    // The FPS limit, or XeFG's Dynamic MFG target while it runs as a cap
+    auto fpsLimit = FrameLimit::targetFps();
+
+    // The game's XeFG with its own XeLL, only OptiScaler's FPS limit goes to it. XeLL knows the generated frames.
+    if (InputXeLL::IsNative())
+    {
+        if (current_tech != nullptr)
+        {
+            current_tech.reset();
+            std::scoped_lock lock(create_tech_mutex);
+            deinit_current_tech();
+            activeOutput = LowLatencyMode::None;
+        }
+
+        limits_fps = InputXeLL::LimitFps(fpsLimit > 0.0f ? static_cast<uint32_t>(std::round(1'000'000 / fpsLimit)) : 0);
+        return;
+    }
+
+    // Force State can change at any time, XeLL takes a changed state through its sleep mode
+    if (current_tech != nullptr)
+    {
+        bool xefgPaced = xefg_paced();
+
+        // LatencyFlex and XeLL without XeFG fall apart with more than 1 generated DLSSG frame, AntiLag 2 only with
+        // Dynamic MFG (its frame types come from the presents, dlssg_present). Only when it starts, Force State can be
+        // changed back afterwards. The FPS Limiter doesn't care.
+        static bool lastMultiFrame = false;
+        bool multiFrame = state.dlssgLastSetMode == sl::DLSSGMode::eDynamic ||
+                          (state.dlssgDetectedInterpolationCount > 1 && activeOutput != LowLatencyMode::AntiLag2);
+
+        if (!std::exchange(lastMultiFrame, multiFrame) && multiFrame && activeOutput != LowLatencyMode::Reflex &&
+            activeOutput != LowLatencyMode::FpsLimiter && !xefgPaced &&
+            Config::Instance()->FN_ForceReflex.value_or_default() != ForceReflex::ForceEnable)
+        {
+            LOG_INFO("Multi frame generation, disabling {}", magic_enum::enum_name(activeOutput));
+            Config::Instance()->FN_ForceReflex.set_volatile_value(ForceReflex::ForceDisable);
+        }
+
+        // OptiScaler's XeFG can start and stop at any time
+        static bool lastXefgPaced = false;
+        static ForceReflex lastOverride = ForceReflex::InGame;
+        auto lowLatencyOverride = Config::Instance()->FN_ForceReflex.value_or_default();
+        current_tech->set_low_latency_override(lowLatencyOverride);
+        current_tech->set_forced_mode(xefgPaced);
+
+        bool overrideChanged = std::exchange(lastOverride, lowLatencyOverride) != lowLatencyOverride;
+
+        if (overrideChanged)
+            LOG_INFO("Low latency Force State: {}", magic_enum::enum_name(lowLatencyOverride));
+
+        if (std::exchange(lastXefgPaced, xefgPaced) != xefgPaced || overrideChanged)
+            apply_sleep_mode(current_tech.get());
+    }
+
+    // The output only sleeps while the game's low latency calls drive it
+    if (current_tech != nullptr && !state.reflexLimitsFps && activeInput != LowLatencyInput::None &&
+        ++presents_without_input <= 20)
+    {
+        auto mode = current_tech->get_mode();
+
+        // Their limiters only work with low latency enabled, for XeLL with XeFG it only skips the sleep calls.
+        // Vulkan's Reflex has no hooks to limit through, its sleep mode limits without low latency too. It needs the
+        // swapchain though, with FSR-FG's swapchain OptiScaler's own limiter takes over in present.
+        // The FPS Limiter is only a limiter, it ignores the game's state but can be force disabled.
+        if (mode == LowLatencyMode::AntiLag2 || mode == LowLatencyMode::XeLL || mode == LowLatencyMode::LatencyFlex ||
+            mode == LowLatencyMode::AntiLagVk)
+        {
+            active = current_tech->is_enabled();
+        }
+        else if (mode == LowLatencyMode::Reflex && output_api == API::Vulkan)
+        {
+            auto reflex = std::dynamic_pointer_cast<ReflexVk>(current_tech);
+            active = reflex != nullptr && reflex->has_swapchain();
+        }
+        else if (mode == LowLatencyMode::FpsLimiter)
+        {
+            active = static_cast<FpsLimiter*>(current_tech.get())->is_limiting();
+        }
+    }
+
+    uint32_t interval = 0;
+
+    if (active && fpsLimit > 0.0f)
+    {
+        interval = static_cast<uint32_t>(std::round(1'000'000 / fpsLimit));
+
+        // The limit is for the presented frames, the output limits the game's. XeFG paces through XeLL, which knows
+        // about its generated frames. The game's own DLSSG reports its count through the NGX evaluate.
+        auto fg = state.CurrentFG();
+        bool fgActive = fg != nullptr && fg->IsActive() && !fg->IsPaused();
+
+        // VK_NV_low_latency2 enforces the interval between all presents to the swapchain, DLSSG's generated ones too
+        auto vkFg = state.currentVkFG;
+        bool driverCountsFg = fgActive && activeOutput == LowLatencyMode::Reflex && output_api == API::Vulkan &&
+                              vkFg != nullptr && vkFg->OwnsSwapchain(VulkanHooks::LowLatencySwapchain());
+
+        if (xefg_paced() || driverCountsFg)
+        {
+            // XeLL already counts XeFG's generated frames, the driver DLSSG's
+        }
+        else if (fgActive)
+        {
+            interval *= fg->GetInterpolatedFrameCount() + 1;
+        }
+        else if (state.dlssgDetectedInterpolationCount > 0)
+        {
+            interval *= state.dlssgDetectedInterpolationCount + 1;
+        }
+        else if (activeInput == LowLatencyInput::AntiLag2 && reports_frame_generation(LowLatencyInput::AntiLag2))
+        {
+            // TODO: The game's FSR-FG as one generated frame, count AntiLag 2's interpolated presents for more
+            interval *= 2;
+        }
+    }
+
+    limits_fps = active;
+
+    if (fps_limit_interval_us.exchange(interval) != interval)
+    {
+        LOG_INFO("FPS limit through {}: {} us", magic_enum::enum_name(activeOutput), interval);
+
+        if (current_tech != nullptr)
+            apply_sleep_mode(current_tech.get());
+    }
+}
+
+InputResult InputCommon::mark_present_start(IUnknown* pDevice)
+{
+    auto fg = State::Instance().CurrentFG();
+    bool fsrfgTypesFrames =
+        State::Instance().activeFgOutput == FGOutput::FSRFG && fg != nullptr && fg->IsActive() && !fg->IsPaused();
+
+    // UE only sends simulation markers
+    bool marksEnds =
+        activeInput == LowLatencyInput::UeLowLatency || (activeInput == LowLatencyInput::AntiLag2 && fsrfgTypesFrames &&
+                                                         !reports_frame_generation(LowLatencyInput::AntiLag2));
+
+    if (!marksEnds)
+        return InputResult::InputNotSupported;
+
+    // TODO: this is missing the frame id required by other outputs
+    if (activeOutput != LowLatencyMode::AntiLag2)
+        return InputResult::GenericError;
+
+    if (auto current_tech = currently_active_tech.load())
+    {
+        MarkerParams marker_params {};
+        marker_params.frame_id = 0; // TODO: will be needed if used with non-AL2
+        marker_params.marker_type = MarkerType::PRESENT_START;
+
+        // AL2 doesn't actually use pDevice but whatever
+        current_tech->set_marker(pDevice, marker_params);
+    }
+    else
+    {
+        return InputResult::NoReadyOutput;
+    }
+
+    return InputResult::Ok;
+}
+
+std::shared_ptr<ReflexVk> InputCommon::reflex_vk_output()
+{
+    return std::dynamic_pointer_cast<ReflexVk>(currently_active_tech.load());
+}
+
+xell_context_handle_t InputCommon::xell_output_context()
+{
+    auto current_tech = currently_active_tech.load();
+
+    if (current_tech == nullptr || current_tech->get_mode() != LowLatencyMode::XeLL)
+        return nullptr;
+
+    return (xell_context_handle_t) current_tech->get_tech_context();
+}
+
+xell_context_handle_t InputCommon::acquire_xefg_xell(IUnknown* pDevice)
+{
+    auto output = xefg_output(Config::Instance()->LowLatencyOutput.value_or_default());
+
+    if (output == LowLatencyMode::XeLL)
+    {
+        // XeFG reads the frames of the XeLL context the low latency input feeds, the output keeps it in low latency
+        // mode while XeFG runs
+        if (set_low_latency_tech(pDevice, LowLatencyMode::XeLL) != InputResult::Ok)
+            return nullptr;
+
+        auto context = xell_output_context();
+        xefg_uses_output_xell = context != nullptr;
+
+        if (context != nullptr)
+            xefg_started_output = output;
+
+        return context;
+    }
+
+    // A Reflex or AntiLag 2 output sleeps, XeFG gets an XeLL context of its own that follows the game's markers.
+    // XeFG needs it in low latency mode.
+    std::scoped_lock lock(create_tech_mutex);
+    xefg_uses_output_xell = false;
+
+    auto own = xefg_xell.load();
+
+    if (own == nullptr)
+    {
+        auto xell = std::make_shared<XeLL>();
+
+        if (!xell->init(pDevice))
+        {
+            LOG_ERROR("Couldn't create XeFG's own XeLL context");
+            return nullptr;
+        }
+
+        xell->set_markers_only(true);
+        xell->set_forced_mode(true);
+
+        SleepMode sleepMode {};
+        sleepMode.low_latency_enabled = true;
+        xell->set_sleep_mode(&sleepMode);
+
+        xefg_xell.store(xell);
+        own = xell;
+
+        LOG_INFO("XeFG paces with its own XeLL context, the low latency output is {}", magic_enum::enum_name(output));
+    }
+
+    xefg_started_output = output;
+
+    return (xell_context_handle_t) own->get_tech_context();
+}
+
+void InputCommon::release_xefg_xell()
+{
+    xefg_uses_output_xell = false;
+    xefg_started_output = LowLatencyMode::None;
+
+    std::scoped_lock lock(create_tech_mutex);
+
+    // The markers may still be on their way to it
+    if (auto own = xefg_xell.exchange(nullptr))
+    {
+        while (own.use_count() > 1)
+            std::this_thread::yield();
+
+        own->deinit();
+    }
+
+    xefg_frame_id = 0;
+    reset_xefg_batches();
+
+    if (auto queue = xefg_present_queue.exchange(nullptr))
+        queue->Release();
+}
+
+bool InputCommon::xefg_output_change_pending()
+{
+    // XeFG keeps the XeLL context it got when it started, switching between the XeLL output's and its own needs a
+    // restart
+    auto started = xefg_started_output.load();
+
+    return started != LowLatencyMode::None &&
+           xefg_output(Config::Instance()->LowLatencyOutput.value_or_default()) != started;
+}

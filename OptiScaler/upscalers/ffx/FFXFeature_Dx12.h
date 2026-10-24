@@ -1,0 +1,50 @@
+#pragma once
+#include "FFXFeature.h"
+#include <upscalers/IFeature_Dx12.h>
+
+#include "dx12/ffx_api_dx12.h"
+#include "proxies/FfxApi_Proxy.h"
+#include <shaders/auto_exposure/AE_Dx12.h>
+
+class FFXFeatureDx12 : public FFXFeature, public IFeature_Dx12
+{
+  private:
+    std::unique_ptr<AE_Dx12> _autoExposure;
+    bool _customAutoExposure = false;
+
+    NVSDK_NGX_Parameter* SetParameters(NVSDK_NGX_Parameter* InParameters);
+
+  protected:
+    bool InitFFX(const NVSDK_NGX_Parameter* InParameters);
+
+  public:
+    FFXFeatureDx12(unsigned int InHandleId, NVSDK_NGX_Parameter* InParameters);
+
+    bool InitInternal(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters) override;
+    bool EvaluateInternal(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters) override;
+    bool QueryProviders(ID3D12Device* device);
+
+    feature_version Version() override { return FFXFeature::Version(); }
+    Upscaler GetUpscalerType() const final { return Upscaler::FFX; }
+    API Api() const override { return IFeature_Dx12::Api(); }
+    bool CallsUpscalerEndByItself() override { return IFeature_Dx12::CallsUpscalerEndByItself(); }
+    std::optional<double> ReadUpscalerTime(void* commandQueue) override
+    {
+        return IFeature_Dx12::ReadUpscalerTime(commandQueue);
+    };
+    void ReadDetailedGpuTimes(void* commandQueue, std::vector<DetailedGpuTime>& detailedGpuTimes) override
+    {
+        return IFeature_Dx12::ReadDetailedGpuTimes(commandQueue, detailedGpuTimes);
+    };
+
+    bool IsWithDx12() final { return false; }
+
+    ~FFXFeatureDx12()
+    {
+        if (State::Instance().isShuttingDown)
+            return;
+
+        if (_context != nullptr)
+            FfxApiProxy::D3D12_DestroyContext(&_context, NULL);
+    }
+};

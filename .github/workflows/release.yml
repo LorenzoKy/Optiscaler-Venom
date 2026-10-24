@@ -1,0 +1,57 @@
+name: Build and release
+
+on:
+  push:
+    tags: [ "opti-venom-v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        submodules: 'true'
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v3
+
+    - name: Build Release x64
+      run: msbuild OptiScaler.sln /m /p:Configuration=Release /p:Platform=x64 /verbosity:minimal
+
+    - name: Package
+      id: package
+      shell: powershell
+      run: |
+        $version = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".Replace("opti-venom-", "") } else { "dev-$("${{ github.sha }}".Substring(0, 8))" }
+        $name = "OptiScaler-Venom_$version"
+        Copy-Item CHANGELOG-Opti-Venom.md x64\Release\a\
+        7z a -r "$name.7z" .\x64\Release\a\*.*
+        Get-FileHash "$name.7z" -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $name.7z" } | Out-File -Encoding ascii "$name.7z.sha256"
+        "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.package.outputs.name }}
+        path: |
+          ${{ steps.package.outputs.name }}.7z
+          ${{ steps.package.outputs.name }}.7z.sha256
+        if-no-files-found: error
+
+    # Draft only: it's published by hand after checking it
+    - name: Draft release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v2
+      with:
+        draft: true
+        name: OptiScaler Venom ${{ steps.package.outputs.version }}
+        body_path: .github/release-notes/${{ github.ref_name }}.md
+        files: |
+          ${{ steps.package.outputs.name }}.7z
+          ${{ steps.package.outputs.name }}.7z.sha256

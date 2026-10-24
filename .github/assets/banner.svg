@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="220" viewBox="0 0 1280 220" role="img" aria-label="OptiScaler Venom">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08070c"/>
+      <stop offset="1" stop-color="#140b20"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6d28d9"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="title" gradientUnits="userSpaceOnUse" x1="410" y1="0" x2="660" y2="0">
+      <stop offset="0" stop-color="#6d28d9"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="220" rx="20" fill="url(#bg)"/>
+  <rect width="1280" height="220" rx="20" fill="url(#grid)"/>
+  <g font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif">
+    <text x="70" y="122" font-size="64" font-weight="800"><tspan fill="#e5e7eb">OptiScaler</tspan> <tspan fill="url(#title)">Venom</tspan></text>
+    <text x="73" y="162" fill="#ef4444" font-size="22" font-weight="600" letter-spacing="1">By LorenzoKy</text>
+  </g>
+  <!-- frame time trace -->
+  <path d="M760 130 L800 122 L840 126 L880 108 L920 118 L960 114 L1000 92 L1040 112 L1080 120 L1120 110 L1160 116 L1208 102" fill="none" stroke="url(#accent)" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" stroke-opacity="0.9"/>
+  <g>
+    <circle cx="1000" cy="92" r="6" fill="#8b5cf6"/>
+    <circle cx="1208" cy="102" r="6" fill="#a78bfa"/>
+  </g>
+</svg>
