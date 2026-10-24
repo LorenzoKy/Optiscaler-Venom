@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/LorenzoKy/Optiscaler-LKY/opti-venom-v0.1/.github/assets/banner.svg" alt="OptiScaler Venom v0.1" width="100%" />
+<img src="https://raw.githubusercontent.com/LorenzoKy/Optiscaler-Venom/opti-venom-v0.1/.github/assets/banner.svg" alt="OptiScaler Venom v0.1" width="100%" />
 
 **First release of OptiScaler Venom** by LorenzoKy (LKY): upstream OptiScaler plus a reworked, fully customizable FPS overlay.
 
@@ -10,7 +10,7 @@
 - **Presets**: Opti-Like, Afterburner-Like, Latency Lab. **Share Settings** as a copy/paste code.
 - Default settings look exactly like upstream's overlay.
 
-Full list in [CHANGELOG-Opti-Venom.md](https://github.com/LorenzoKy/Optiscaler-LKY/blob/opti-venom-v0.1/CHANGELOG-Opti-Venom.md).
+Full list in [CHANGELOG-Opti-Venom.md](https://github.com/LorenzoKy/Optiscaler-Venom/blob/opti-venom-v0.1/CHANGELOG-Opti-Venom.md).
 
 ### 📦 Install
 Extract `OptiScaler-Venom_v0.1.7z` next to the game's executable and rename `OptiScaler.dll` as usual (e.g. `dxgi.dll`). Updating? Replace only the DLL and keep your ini. Guide: [OptiScaler wiki](https://github.com/optiscaler/OptiScaler/wiki).
@@ -18,4 +18,4 @@ Extract `OptiScaler-Venom_v0.1.7z` next to the game's executable and rename `Opt
 ### 🙏 Credits
 All the upscaling and frame generation work is [OptiScaler](https://github.com/optiscaler/OptiScaler)'s (cdozdil, FakeMichau, TheRazerMD and contributors). OptiScaler Venom and its FPS overlay rework by [LorenzoKy](https://github.com/LorenzoKy) (LKY).
 
-Unofficial build: please report issues [here](https://github.com/LorenzoKy/Optiscaler-LKY/issues), not to the OptiScaler team.
+Unofficial build: please report issues [here](https://github.com/LorenzoKy/Optiscaler-Venom/issues), not to the OptiScaler team.

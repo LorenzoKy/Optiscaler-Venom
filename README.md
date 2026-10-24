@@ -7,12 +7,13 @@
 <br />
 <div align="center">
   <a href="https://ko-fi.com/lorenzoky"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>
-  <a href="https://github.com/sponsors/cdozdil?frequency=one-time"><img src="images/gh-sponsor-red.png" alt="Sponsor OptiScaler" /></a>
+  <br />
+  <a href="https://github.com/sponsors/cdozdil?frequency=one-time"><img src="https://img.shields.io/badge/Support-the_OptiScaler_team-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Support the OptiScaler team" /></a>
 </div>
 <br />
 <div align="center">
 
-  <a href="https://github.com/LorenzoKy/Optiscaler-LKY/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-LKY?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
+  <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
   <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.1-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
   <a href="https://github.com/optiscaler/OptiScaler"><img src="https://img.shields.io/badge/Based%20on-OptiScaler-64748b?style=for-the-badge&logo=github" alt="Based on OptiScaler"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-64748b?style=for-the-badge" alt="GPL-3.0"></a>
@@ -24,7 +25,7 @@
 **OptiScaler Venom** (by LorenzoKy, LKY) is a community build of [OptiScaler](https://github.com/optiscaler/OptiScaler) that follows the latest upstream development and adds a reworked **FPS overlay**: every row, color, font and position can be changed, and it shows a lot more than FPS. Everything else (upscalers, frame generation, spoofing, the in-game menu) is upstream OptiScaler, unchanged.
 
 > [!NOTE]
-> This is an unofficial build. Please don't report issues with it to the OptiScaler team: open them [here](https://github.com/LorenzoKy/Optiscaler-LKY/issues) instead. If a problem also happens with the official [nightly](https://github.com/optiscaler/OptiScaler/releases/tag/nightly), it's an upstream one.
+> This is an unofficial build. Please don't report issues with it to the OptiScaler team: open them [here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) instead. If a problem also happens with the official [nightly](https://github.com/optiscaler/OptiScaler/releases/tag/nightly), it's an upstream one.
 
 ## ✨ What's different
 
@@ -46,7 +47,7 @@ With the default settings the overlay looks exactly like upstream's: nothing cha
 
 ## 📦 Installation
 
-1. Download the latest `.7z` from [**Releases**](https://github.com/LorenzoKy/Optiscaler-LKY/releases/latest).
+1. Download the latest `.7z` from [**Releases**](https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest).
 2. Install it like regular OptiScaler: extract it next to the game's executable and rename `OptiScaler.dll` (for example to `dxgi.dll`). The full guide is in the [OptiScaler wiki](https://github.com/optiscaler/OptiScaler/wiki).
 3. Already using OptiScaler? Replace only `OptiScaler.dll` (renamed as before) and keep your `OptiScaler.ini`: the new overlay keys fall back to their defaults. To have them documented in your ini, take the one from the archive.
 
