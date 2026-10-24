@@ -1,0 +1,180 @@
+# Every day: takes the latest official OptiScaler nightly, applies the Opti-Venom
+# patches (branch opti-venom of LorenzoKy/OptiScaler) on the same upstream commit,
+# builds it and publishes a pre-release. On a conflict it skips the build and opens an issue.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 11 * * *"   # upstream nightlies come out around 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      nightly_tag:
+        description: "Upstream nightly tag (empty = latest)"
+        required: false
+      force:
+        description: "Rebuild even if this nightly was already released"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: optiscaler/OptiScaler
+  NIGHTLY_REPO: optiscaler/OptiScaler-nightly
+  PATCH_REPO: LorenzoKy/OptiScaler
+  PATCH_BRANCH: opti-venom
+  KEEP_NIGHTLIES: 14
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  nightly:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        path: venom
+
+    - name: Find upstream nightly
+      id: find
+      run: |
+        tag="${{ inputs.nightly_tag }}"
+        [ -z "$tag" ] && tag=$(gh release list -R "$NIGHTLY_REPO" -L 1 --json tagName --jq '.[0].tagName')
+        [ -z "$tag" ] && { echo "::error::No upstream nightly found"; exit 1; }
+        json=$(gh release view "$tag" -R "$NIGHTLY_REPO" --json body,createdAt,url)
+        # The nightly notes list the commits of the last 24 hours, newest first
+        sha=$(echo "$json" | jq -r .body | grep -oE "github.com/$UPSTREAM/commit/[0-9a-f]{40}" | head -1 | grep -oE '[0-9a-f]{40}$' || true)
+        if [ -z "$sha" ]; then
+          created=$(echo "$json" | jq -r .createdAt)
+          sha=$(gh api "repos/$UPSTREAM/commits?sha=master&until=$created&per_page=1" --jq '.[0].sha')
+        fi
+        date=${tag#nightly-}
+        ours="opti-venom-nightly-$date"
+        skip=false
+        if [ "${{ inputs.force }}" != "true" ] && gh release view "$ours" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          echo "$ours already released, nothing to do"; skip=true
+        fi
+        {
+          echo "tag=$tag"; echo "sha=$sha"; echo "date=$date"; echo "ours=$ours"; echo "skip=$skip"
+          echo "url=$(echo "$json" | jq -r .url)"
+        } >> "$GITHUB_OUTPUT"
+        echo "Upstream nightly $tag = $UPSTREAM@$sha"
+
+    - name: Merge Opti-Venom patches
+      id: merge
+      if: steps.find.outputs.skip == 'false'
+      run: |
+        git config --global user.name "LorenzoKy"
+        git config --global user.email "136495843+LorenzoKy@users.noreply.github.com"
+        git config --global core.autocrlf false
+        git clone -q "https://github.com/$UPSTREAM.git" src
+        cd src
+        git checkout -q --detach "${{ steps.find.outputs.sha }}"
+        git fetch -q "https://github.com/$PATCH_REPO.git" "$PATCH_BRANCH:venom-patch"
+        # Only our commits: those of the patch branch that upstream master doesn't have
+        base=$(git merge-base venom-patch origin/master)
+        git log --reverse --format='- %h %s' "$base..venom-patch" > ../patches.txt
+        echo "base=$base" >> "$GITHUB_OUTPUT"
+        echo "patch=$(git rev-parse --short=8 venom-patch)" >> "$GITHUB_OUTPUT"
+        if ! git cherry-pick "$base..venom-patch" > ../pick.log 2>&1; then
+          git diff --name-only --diff-filter=U > ../conflicts.txt
+          git cherry-pick --abort || true
+          echo "conflict=true" >> "$GITHUB_OUTPUT"
+          cat ../pick.log
+          exit 0
+        fi
+        echo "conflict=false" >> "$GITHUB_OUTPUT"
+        git submodule update --init --recursive -q
+
+    - name: Report conflict
+      if: steps.merge.outputs.conflict == 'true'
+      run: |
+        title="Nightly ${{ steps.find.outputs.date }}: Opti-Venom patches conflict with upstream"
+        {
+          echo "The automatic nightly build was skipped."
+          echo
+          echo "- Upstream nightly: [${{ steps.find.outputs.tag }}](${{ steps.find.outputs.url }}), commit [\`${{ steps.find.outputs.sha }}\`](https://github.com/$UPSTREAM/commit/${{ steps.find.outputs.sha }})"
+          echo "- Patches: \`$PATCH_REPO@$PATCH_BRANCH\` (\`${{ steps.merge.outputs.patch }}\`)"
+          echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          echo
+          echo "Conflicting files:"
+          sed 's/^/- `/; s/$/`/' conflicts.txt
+          echo
+          echo "Rebase \`$PATCH_BRANCH\` on the new upstream master and push it: the next run picks it up."
+        } > issue.md
+        open=$(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict --state open --json number --jq '.[0].number')
+        if [ -n "$open" ]; then
+          gh issue comment "$open" -R "$GITHUB_REPOSITORY" --body-file issue.md
+        else
+          gh label create nightly-conflict -R "$GITHUB_REPOSITORY" --color B91C1C --description "Automatic nightly skipped" 2>/dev/null || true
+          gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --label nightly-conflict --body-file issue.md
+        fi
+        echo "::error::Patches conflict with ${{ steps.find.outputs.tag }}, build skipped"
+        exit 1
+
+    - name: Add MSBuild to PATH
+      if: steps.merge.outputs.conflict == 'false'
+      uses: microsoft/setup-msbuild@v3
+
+    - name: Build Release x64
+      if: steps.merge.outputs.conflict == 'false'
+      working-directory: src
+      shell: pwsh
+      run: msbuild OptiScaler.sln /m /p:Configuration=Release /p:Platform=x64 /verbosity:minimal
+
+    - name: Package
+      id: package
+      if: steps.merge.outputs.conflict == 'false'
+      shell: pwsh
+      run: |
+        $name = "OptiScaler-Venom_nightly-${{ steps.find.outputs.date }}"
+        Copy-Item venom\CHANGELOG-Opti-Venom.md src\x64\Release\a\
+        7z a -r "$name.7z" .\src\x64\Release\a\*.*
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        $hash = (Get-FileHash "$name.7z" -Algorithm SHA256).Hash.ToLower()
+        [IO.File]::WriteAllText("$PWD\$name.7z.sha256", "$hash  $name.7z`n")
+        "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    - name: Publish pre-release
+      if: steps.merge.outputs.conflict == 'false'
+      run: |
+        sha="${{ steps.find.outputs.sha }}"
+        name="${{ steps.package.outputs.name }}"
+        {
+          echo "Automatic build: the official OptiScaler nightly of ${{ steps.find.outputs.date }} plus the Opti-Venom changes. Not tested in game, use the [stable releases]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/latest) if you want something checked."
+          echo
+          echo "> **Built on upstream nightly [${{ steps.find.outputs.tag }}](${{ steps.find.outputs.url }})**"
+          echo "> Upstream \`master\` at commit [\`${sha:0:8}\`](https://github.com/$UPSTREAM/commit/$sha)."
+          echo
+          echo "Opti-Venom changes applied (from [\`$PATCH_BRANCH\`](https://github.com/$PATCH_REPO/tree/$PATCH_BRANCH) @ \`${{ steps.merge.outputs.patch }}\`):"
+          echo
+          cat patches.txt
+          echo
+          echo "Upstream changes of this nightly: see the [nightly notes](${{ steps.find.outputs.url }})."
+          echo "All credit for OptiScaler goes to the [OptiScaler team](https://github.com/$UPSTREAM)."
+        } > notes.md
+        tag="${{ steps.find.outputs.ours }}"
+        gh release delete "$tag" -R "$GITHUB_REPOSITORY" --cleanup-tag -y 2>/dev/null || true
+        gh release create "$tag" "$name.7z" "$name.7z.sha256" -R "$GITHUB_REPOSITORY" \
+          --target "$GITHUB_SHA" --prerelease --latest=false \
+          --title "OptiScaler Venom nightly ${{ steps.find.outputs.date }}" --notes-file notes.md
+        # A conflict that was solved closes its issue
+        for n in $(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict --state open --json number --jq '.[].number'); do
+          gh issue close "$n" -R "$GITHUB_REPOSITORY" --comment "Solved: $tag was built."
+        done
+
+    - name: Remove old nightlies
+      if: steps.merge.outputs.conflict == 'false'
+      run: |
+        gh release list -R "$GITHUB_REPOSITORY" -L 200 --json tagName --jq '.[].tagName' \
+          | grep '^opti-venom-nightly-' | sort -r | tail -n +$((KEEP_NIGHTLIES + 1)) \
+          | while read -r t; do gh release delete "$t" -R "$GITHUB_REPOSITORY" --cleanup-tag -y; done

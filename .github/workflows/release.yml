@@ -32,7 +32,8 @@ jobs:
         $name = "OptiScaler-Venom_$version"
         Copy-Item CHANGELOG-Opti-Venom.md x64\Release\a\
         7z a -r "$name.7z" .\x64\Release\a\*.*
-        Get-FileHash "$name.7z" -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $name.7z" } | Out-File -Encoding ascii "$name.7z.sha256"
+        $hash = (Get-FileHash "$name.7z" -Algorithm SHA256).Hash.ToLower()
+        [IO.File]::WriteAllText("$PWD\$name.7z.sha256", "$hash  $name.7z`n")
         "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
