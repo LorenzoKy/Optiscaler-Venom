@@ -2,7 +2,15 @@
 
   <img src=".github/assets/banner.svg" alt="OptiScaler Venom" width="100%" />
 
-  <br />
+</div>
+<hr />
+<br />
+<div align="center">
+  <a href="https://ko-fi.com/lorenzoky"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>
+  <a href="https://github.com/sponsors/cdozdil?frequency=one-time"><img src="images/gh-sponsor-red.png" alt="Sponsor OptiScaler" /></a>
+</div>
+<br />
+<div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-LKY/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-LKY?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
   <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.1-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
@@ -64,6 +72,12 @@ See [**CHANGELOG-Opti-Venom.md**](CHANGELOG-Opti-Venom.md). Every release says w
 
 - **[OptiScaler](https://github.com/optiscaler/OptiScaler)** and its team and contributors (cdozdil, FakeMichau, TheRazerMD and everyone else): this build is entirely based on their work. If you like it, [support OptiScaler](https://github.com/sponsors/cdozdil?frequency=one-time).
 - **[LorenzoKy](https://github.com/LorenzoKy)**: FPS overlay rework and the OptiScaler Venom builds.
+
+## ☕ Support
+
+OptiScaler Venom is free and always will be. If it's useful to you and you'd like to say thanks, you can [buy me a coffee on Ko-fi](https://ko-fi.com/lorenzoky): completely optional, and appreciated. Supporting the [OptiScaler team](https://github.com/sponsors/cdozdil?frequency=one-time) helps the project this build is made of.
+
+<a href="https://ko-fi.com/lorenzoky"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>
 - The third-party libraries and SDKs OptiScaler uses, listed in the [original README](README-OptiScaler.md).
 
 ## ⚖️ License
