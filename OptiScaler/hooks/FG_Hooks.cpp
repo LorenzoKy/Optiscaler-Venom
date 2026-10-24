@@ -17,6 +17,7 @@
 
 #include <misc/IdentifyGpu.h>
 #include <hooks/Reflex_Hooks.h>
+#include <gpu_time/FGGpuTime_Dx12.h>
 #include <low_latency/input/input_common.h>
 #include <menu/menu_overlay_dx.h>
 
@@ -1242,6 +1243,38 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
                     State::Instance().frameTimeMutex.unlock();
                 }
             }
+        }
+    }
+
+    // The frame generation's GPU time per real frame, timed only while the overlay shows it
+    if (willPresent)
+    {
+        const bool timeFG = fg != nullptr && fg->IsActive() && !fg->IsPaused() && config->ShowFps.value_or_default() &&
+                            config->FpsOverlayShowFGTime.value_or_default();
+
+        static bool lastTimeFG = false;
+        static double modulesSetAt = 0.0;
+        const auto now = Util::MillisecondsNow();
+
+        // Its libraries can load after it starts
+        if (timeFG != lastTimeFG || (timeFG && now - modulesSetAt > 1000.0))
+        {
+            if (timeFG)
+                FGGpuTime_Dx12::Hook(state.currentFG->GetCommandQueue());
+
+            FGGpuTime_Dx12::SetModules(timeFG ? fg->GpuWorkModules() : std::vector<HMODULE> {});
+            lastTimeFG = timeFG;
+            modulesSetAt = now;
+        }
+
+        if (timeFG)
+        {
+            const double fgTime = FGGpuTime_Dx12::Collect();
+
+            State::Instance().frameTimeMutex.lock();
+            State::Instance().fgTimes.push_back(fgTime);
+            State::Instance().fgTimes.pop_front();
+            State::Instance().frameTimeMutex.unlock();
         }
     }
 

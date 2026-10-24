@@ -121,6 +121,9 @@ class IFGFeature
     virtual bool SetInterpolatedFrameCount(UINT interpolatedFrameCount) = 0;
     virtual std::optional<double> ReadGpuTime(void* commandQueue) { return std::nullopt; }
 
+    // Libraries that submit the frame generation's GPU work, their submissions give its GPU time
+    virtual std::vector<HMODULE> GpuWorkModules() { return {}; }
+
     int GetIndex();
     int GetIndexWillBeDispatched();
     UINT64 StartNewFrame();

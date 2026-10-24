@@ -381,6 +381,7 @@ class State
 
     // Framegraph
     std::deque<double> upscaleTimes;
+    std::deque<double> fgTimes; // The frame generation's GPU time per real frame
     std::deque<double> frameTimes;
     std::vector<DetailedGpuTime> detailedGpuTimes;
     double lastFGFrameTime = 0.0;

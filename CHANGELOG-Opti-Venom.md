@@ -15,6 +15,24 @@ Automatic and **not tested**: the official OptiScaler nightly of the day plus th
 <!-- nightly-rows -->
 | `opti-venom-nightly-20261024` | [nightly-20261024](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261024) (2026-10-24) | [`fd3a45a6`](https://github.com/optiscaler/OptiScaler/commit/fd3a45a6cac6d610a35c570479f80dae95ca4eac) (2026-10-23) | [`8037f10a`](https://github.com/LorenzoKy/OptiScaler/commit/8037f10a7a5ce960493e6174902dfb85b5b2ea16) (2026-10-24) |
 
+## Venom v0.2 beta 1 (2026-10-24, pre-release)
+
+> **Built on OptiScaler `10.0.0.1` (development build, after stable `v0.9.4`)**, upstream `master` at [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855), same as v0.1.
+
+### New
+- **Frame Generation Time** overlay row (D3D12, off by default, `FpsOverlayShowFGTime`): GPU time of FSR FG, XeFG or DLSSG per real frame, average, time per generated frame and, with FPS Cost, the FPS it takes. Measured live with GPU timestamps around what the frame generation's libraries submit, on any direct or compute queue.
+- **Extra dlls folder** (`OptiScaler\Extra dlls`, subfolders allowed): more DX12 FFX upscaler dlls (`amd_fidelityfx_upscaler_dx12.dll`, `amd_fidelityfx_dx12.dll`, `amdxcffx64.dll`). The versions they add are listed in the menu's FSR version list, named after their subfolder; versions already listed stay with the default dlls.
+
+### Changed
+- **Session timer** moved to the FPS row (same `FpsOverlayShowSessionTimer` key). The Date & Time row shows only the date and time.
+
+### Fixed
+- The overlay kept resizing and re-centering when a value changed length (issue #1): every row keeps its widest size until it has been narrower for 5 seconds.
+
+### Known limits
+- Only tested on Marvel's Spider-Man 2 with XeFG and FSR 4. FSR FG and DLSSG timing untested; Vulkan frame generation isn't timed.
+- Frame generation work that runs next to the game's on another queue counts in full in the FG time.
+
 ## Venom v0.1 (2026-10-24)
 
 > **Built on OptiScaler `10.0.0.1` (development build, after stable `v0.9.4`)**

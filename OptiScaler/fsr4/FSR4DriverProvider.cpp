@@ -125,12 +125,23 @@ FSR4DriverDll::FSR4DriverDll(const wchar_t* name, std::vector<std::wstring> sdkM
     DriverDlls().push_back(this);
 }
 
+FSR4DriverDll::FSR4DriverDll(const wchar_t* name, std::vector<std::wstring> sdkModules, std::filesystem::path path)
+    : _name(name), _sdkModules(std::move(sdkModules)), _path(std::move(path))
+{
+    DriverDlls().push_back(this);
+}
+
 HMODULE FSR4DriverDll::Load()
 {
     std::call_once(_loadOnce,
                    [this]
                    {
-                       auto module = LoadDriverDll(_name.c_str());
+                       auto module = _path.empty() ? LoadDriverDll(_name.c_str())
+                                                   : NtdllProxy::LoadLibraryExW_Ldr(_path.c_str(), NULL, 0);
+
+                       if (!_path.empty())
+                           LOG_INFO(L"{} from {}: {:X}", _name, _path.wstring(), (size_t) module);
+
                        if (module == nullptr)
                            return;
 

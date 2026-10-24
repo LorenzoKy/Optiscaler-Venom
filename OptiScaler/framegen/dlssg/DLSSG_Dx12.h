@@ -49,6 +49,8 @@ class DLSSG_Dx12 : public virtual IFGFeature_Dx12, public DLSSG_Common
     void* FrameGenerationContext() override final;
     void* SwapchainContext() override final;
 
+    std::vector<HMODULE> GpuWorkModules() override final;
+
     DLSSG_Dx12() : IFGFeature_Dx12(), DLSSG_Common(), IFGFeature()
     {
         if (StreamlineProxy::Module() == nullptr)

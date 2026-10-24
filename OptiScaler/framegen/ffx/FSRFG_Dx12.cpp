@@ -1798,6 +1798,12 @@ bool FSRFG_Dx12::SetResource(Dx12Resource* inputResource)
 
 void FSRFG_Dx12::SetCommandQueue(FG_ResourceType type, ID3D12CommandQueue* queue) { _gameCommandQueue = queue; }
 
+// The frame generation swapchain is in the frame generation dll, in the loader with older SDKs, or in the driver dll
+std::vector<HMODULE> FSRFG_Dx12::GpuWorkModules()
+{
+    return { FfxApiProxy::Dx12Module_FG(), FfxApiProxy::Dx12Module(), FSR4DriverProviderDx12::LoadedModule() };
+}
+
 void FSRFG_Dx12::CreateObjects(ID3D12Device* InDevice)
 {
     _device = InDevice;

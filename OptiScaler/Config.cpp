@@ -890,6 +890,7 @@ static const char* overlayIniKeys[] = {
     "FpsOverlayLatencyType",
     "FpsOverlayShowFrameTime",
     "FpsOverlayShowUpscalerTime",
+    "FpsOverlayShowFGTime",
     "FpsOverlayShowFpsCost",
     "FpsOverlayShowPointOneLow",
     "FpsOverlayShowBottleneck",
@@ -963,6 +964,7 @@ void Config::ReadOverlaySettings(bool assign)
                                      .transform([](uint32_t value) { return (FpsOverlayLatency) value; }));
     apply(FpsOverlayShowFrameTime, readBool("Menu", "FpsOverlayShowFrameTime"));
     apply(FpsOverlayShowUpscalerTime, readBool("Menu", "FpsOverlayShowUpscalerTime"));
+    apply(FpsOverlayShowFGTime, readBool("Menu", "FpsOverlayShowFGTime"));
     apply(FpsOverlayShowFpsCost, readBool("Menu", "FpsOverlayShowFpsCost"));
     apply(FpsOverlayShowPointOneLow, readBool("Menu", "FpsOverlayShowPointOneLow"));
     apply(FpsOverlayShowBottleneck, readBool("Menu", "FpsOverlayShowBottleneck"));
@@ -1016,6 +1018,7 @@ void Config::WriteOverlaySettings()
     ini.SetValue("Menu", "FpsOverlayShowFrameTime", GetBoolValue(FpsOverlayShowFrameTime.value_for_config()).c_str());
     ini.SetValue("Menu", "FpsOverlayShowUpscalerTime",
                  GetBoolValue(FpsOverlayShowUpscalerTime.value_for_config()).c_str());
+    ini.SetValue("Menu", "FpsOverlayShowFGTime", GetBoolValue(FpsOverlayShowFGTime.value_for_config()).c_str());
     ini.SetValue("Menu", "FpsOverlayShowFpsCost", GetBoolValue(FpsOverlayShowFpsCost.value_for_config()).c_str());
     ini.SetValue("Menu", "FpsOverlayShowPointOneLow",
                  GetBoolValue(FpsOverlayShowPointOneLow.value_for_config()).c_str());

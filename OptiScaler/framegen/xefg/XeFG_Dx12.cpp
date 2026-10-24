@@ -1749,6 +1749,8 @@ bool XeFG_Dx12::SetResource(Dx12Resource* inputResource)
 
 void XeFG_Dx12::SetCommandQueue(FG_ResourceType type, ID3D12CommandQueue* queue) { _gameCommandQueue = queue; }
 
+std::vector<HMODULE> XeFG_Dx12::GpuWorkModules() { return { XeFGProxy::Module() }; }
+
 bool XeFG_Dx12::ReleaseSwapchain(HWND hwnd)
 {
     if (hwnd != _hwnd || _hwnd == NULL)
