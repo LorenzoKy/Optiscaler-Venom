@@ -727,6 +727,7 @@ class Config
     CustomOptional<bool> FGXeFGHighResMV { false };
     CustomOptional<bool> FGXeFGDebugView { false };
     CustomOptional<bool, SoftDefault> FGXeFGForceBorderless { false };
+    CustomOptional<bool> FGXeFGVulkan { true }; // XeFG in Vulkan games through D3D12
 
     // DLSSG
     CustomOptional<int> FGDLSSGInterpolationCount { 1 }; // For Opti's own SL instance

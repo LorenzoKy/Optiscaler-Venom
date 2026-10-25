@@ -8,7 +8,8 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream `master` | |
 | --- | --- | --- | --- |
-| [v0.2 beta 3](#v02-beta-3) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | Latest |
+| [v0.2 beta 4](#v02-beta-4) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | Latest |
+| [v0.2 beta 3](#v02-beta-3) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | |
 | [v0.2 beta 2](#v02-beta-2) | 2026-10-25 | [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) | |
 | [v0.2 beta 1](#v02-beta-1) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | Pre-release |
 | [v0.1](#v01) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | |
@@ -16,6 +17,22 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.2 beta 4
+
+> **Built on OptiScaler `10.0.0.1`** (development build, after stable `v0.9.4`), upstream `master` at [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396), 2026-10-25, the same as v0.2 beta 3: everything in the official nightly [nightly-20261025](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261025) plus the 4 upstream commits after it.
+
+### New
+- **XeFG in Vulkan games**, by [dashdogy](https://github.com/dashdogy) ([optiscaler/OptiScaler#1240](https://github.com/optiscaler/OptiScaler/pull/1240), not merged upstream yet): the game's Vulkan frames are presented through a D3D12 swapchain, so XeFG, XeLL, Dynamic MFG, the FPS limit and the menu work as in D3D12 games. It takes the Upscaler and the DLSSG (Streamline) FG inputs, HDR10 and scRGB included. Also makes [MFG Unlocker](https://github.com/dashdogy/MFG-Unlocker)'s XeMFG work in Vulkan games with Venom.
+- `[XeFG] Vulkan` in `OptiScaler.ini` (on by default): `false` turns the Vulkan path off, Vulkan games keep their own swapchain and XeFG is disabled there, as before.
+
+### Fixed
+- From dashdogy's MFG Unlocker build: the D3D12 menu and FPS overlay no longer hold the present with XeFG (overlay allocator ring), and the FSR FG present while frame generation is off.
+- XeFG on Vulkan: a frame that can't reach the D3D12 swapchain is dropped and the image still goes back to the game, instead of a device lost; the FG inputs' shared textures are freed with the swapchain.
+
+### Known limits
+- XeFG on Vulkan is new and **not tested in game** in Venom: if a Vulkan game breaks with it, set `[XeFG] Vulkan=false`.
+- On some drivers the shared textures may show artifacts in generated frames, resizing the window while XeFG runs may fail, and presents wait for the D3D12 swapchain on the render thread (a bit more latency than XeFG in D3D12 games).
 
 ## v0.2 beta 3
 

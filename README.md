@@ -12,7 +12,7 @@
 <div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
-  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.2%20beta%203-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
+  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.2%20beta%204-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
   <a href="https://github.com/optiscaler/OptiScaler"><img src="https://img.shields.io/badge/Based%20on-OptiScaler-64748b?style=for-the-badge&logo=github" alt="Based on OptiScaler"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-64748b?style=for-the-badge" alt="GPL-3.0"></a>
 
@@ -38,6 +38,7 @@
 | VRAM, GPU, CPU and RAM telemetry, CPU & GPU usage % | | ✅ |
 | GPU and CPU hotspot, temperatures on Linux too | | ✅ |
 | Frame generation GPU time | | ✅ |
+| XeFG in Vulkan games (by dashdogy) | | ✅ |
 | Date, time and session timer | | ✅ |
 | Upscale ratio with FSR 4 model / DLSS preset | | ✅ |
 | Fonts, colors, outline, rounding, custom rows, any screen position | ✅ | ✅ |
