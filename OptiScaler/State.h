@@ -383,6 +383,7 @@ class State
     std::deque<double> upscaleTimes;
     std::deque<double> fgTimes; // The frame generation's GPU time per real frame
     std::deque<double> frameTimes;
+    bool overlayShowsFGTime = false; // The FPS overlay shows a frame generation time row, so it's timed
     std::vector<DetailedGpuTime> detailedGpuTimes;
     double lastFGFrameTime = 0.0;
     double presentFrameTime = 0.0;

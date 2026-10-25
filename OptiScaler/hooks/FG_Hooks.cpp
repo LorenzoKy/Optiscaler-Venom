@@ -1250,7 +1250,7 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
     if (willPresent)
     {
         const bool timeFG = fg != nullptr && fg->IsActive() && !fg->IsPaused() && config->ShowFps.value_or_default() &&
-                            config->FpsOverlayShowFGTime.value_or_default();
+                            State::Instance().overlayShowsFGTime;
 
         static bool lastTimeFG = false;
         static double modulesSetAt = 0.0;

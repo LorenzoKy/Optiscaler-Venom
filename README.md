@@ -12,7 +12,7 @@
 <div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
-  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.1-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
+  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.2%20beta%202-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
   <a href="https://github.com/optiscaler/OptiScaler"><img src="https://img.shields.io/badge/Based%20on-OptiScaler-64748b?style=for-the-badge&logo=github" alt="Based on OptiScaler"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-64748b?style=for-the-badge" alt="GPL-3.0"></a>
 
@@ -36,10 +36,12 @@
 | Bottleneck from GPU usage and CPU wait: GPU / CPU / FPS limit / V-Sync | | ✅ |
 | Real refresh rate, VRR aware (experimental) | | ✅ |
 | VRAM, GPU, CPU and RAM telemetry, CPU & GPU usage % | | ✅ |
+| GPU and CPU hotspot, temperatures on Linux too | | ✅ |
+| Frame generation GPU time | | ✅ |
 | Date, time and session timer | | ✅ |
 | Upscale ratio with FSR 4 model / DLSS preset | | ✅ |
-| Fonts, colors, outline, rounding, row order, any screen position | | ✅ |
-| Ready-made overlay presets, copy/paste settings code | | ✅ |
+| Fonts, colors, outline, rounding, custom rows, any screen position | ✅ | ✅ |
+| Ready-made overlay presets, copy/paste settings code | ✅ | ✅ |
 
 With the default settings the overlay looks exactly like upstream's: nothing changes until you turn something on.
 
@@ -69,8 +71,9 @@ Every nightly says exactly what it's made of: the upstream nightly and commit wi
 
 Open the OptiScaler menu (`Insert` by default) and go to **FPS Overlay**:
 
-- **Presets**: *Opti-Like*, *Afterburner-Like* and *Latency Lab*, one click to apply, **Save Settings** to keep.
-- **Rows** and **Metric Options**: choose what to show, in which order, and how (latency type, lows, CPU & GPU usage, session timer, hardware names, compact labels).
+- **Overlay Type**: the presets of rows from *Just FPS* to *Full + Graph*, or *Custom* to choose every row and its order in **Rows**. The Venom rows show in the presets when turned on in **Rows > More Rows in Presets**.
+- **Row Options**: how the rows look (latency type, lows, CPU & GPU usage, GPU and CPU hotspot, session timer, hardware names).
+- **Appearance > Presets**: *Default*, *Classic*, *Afterburner-Like* and *Glass Strip*, one click to apply, **Save Settings** to keep.
 - **Appearance**: font, size, colors, shadow or outline, background, corner radius, position (corners, centers or custom X/Y).
 - **Share Settings**: **Copy Code** puts your setup in the clipboard to share it, **Paste Code** applies someone else's.
 

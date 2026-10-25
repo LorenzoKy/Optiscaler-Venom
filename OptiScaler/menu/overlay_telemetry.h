@@ -18,6 +18,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <optional>
@@ -31,6 +32,7 @@ namespace OverlayTelemetry
 struct GpuMetrics
 {
     std::optional<double> tempC;
+    std::optional<double> hotspotC; // The hottest sensor: AMD junction, NVIDIA hot spot
     std::optional<double> powerW;
     std::optional<double> voltageV;
     std::optional<uint32_t> coreClockMhz;
@@ -39,14 +41,15 @@ struct GpuMetrics
 
     bool hasAny() const
     {
-        return tempC.has_value() || powerW.has_value() || voltageV.has_value() || coreClockMhz.has_value() ||
-               memClockMhz.has_value() || usagePercent.has_value();
+        return tempC.has_value() || hotspotC.has_value() || powerW.has_value() || voltageV.has_value() ||
+               coreClockMhz.has_value() || memClockMhz.has_value() || usagePercent.has_value();
     }
 };
 
 struct CpuMetrics
 {
-    std::optional<double> tempC;
+    std::optional<double> tempC;    // Package, or AMD's Tctl
+    std::optional<double> hotspotC; // The hottest core or CCD
     std::optional<double> powerW;
     std::optional<double> voltageV;
     std::optional<uint32_t> clockMhz;
@@ -54,8 +57,8 @@ struct CpuMetrics
 
     bool hasAny() const
     {
-        return tempC.has_value() || powerW.has_value() || voltageV.has_value() || clockMhz.has_value() ||
-               usagePercent.has_value();
+        return tempC.has_value() || hotspotC.has_value() || powerW.has_value() || voltageV.has_value() ||
+               clockMhz.has_value() || usagePercent.has_value();
     }
 };
 
@@ -298,6 +301,22 @@ inline std::string GetCpuLabel(bool compact)
 namespace detail
 {
 
+// Logs the first time a source gives a value, so a log says where the overlay's numbers come from
+inline void LogSource(const char* what, const char* source)
+{
+    static std::mutex mutex;
+    static std::vector<std::string> logged;
+
+    std::string entry = std::string(what) + " from " + source;
+    std::lock_guard lock(mutex);
+
+    if (std::find(logged.begin(), logged.end(), entry) != logged.end())
+        return;
+
+    logged.push_back(entry);
+    LOG_INFO("FPS overlay: {}", entry);
+}
+
 // AMD Display Library (atiadlxx.dll in System32)
 namespace Adl
 {
@@ -505,6 +524,20 @@ struct NvGpuVoltageStatus
 
 using PFN_NvAPI_GPU_GetCurrentVoltage = NvAPI_Status(__cdecl*)(NvPhysicalGpuHandle, NvGpuVoltageStatus*);
 
+// NvAPI_GPU_ThermalGetSensors, not in the public NVAPI: the GPU's sensors in 1/256 C, the hot spot is the second.
+// RTX 50 GPUs don't report it anymore.
+struct NvThermalSensors
+{
+    NvU32 version;
+    NvU32 mask; // The sensors asked for
+    NvS32 reserved[8];
+    NvS32 temperatures[32];
+};
+
+using PFN_NvAPI_GPU_ThermalGetSensors = NvAPI_Status(__cdecl*)(NvPhysicalGpuHandle, NvThermalSensors*);
+constexpr NvU32 NvThermalSensorsVersion = sizeof(NvThermalSensors) | (2u << 16);
+constexpr int NvHotspotSensor = 1;
+
 struct State
 {
     bool initialized = false;
@@ -517,6 +550,8 @@ struct State
     decltype(&NvAPI_GPU_GetAllClockFrequencies) getAllClocks = nullptr;
     decltype(&NvAPI_GPU_GetThermalSettings) getThermal = nullptr;
     PFN_NvAPI_GPU_GetCurrentVoltage getCurrentVoltage = nullptr;
+    PFN_NvAPI_GPU_ThermalGetSensors getThermalSensors = nullptr;
+    NvU32 thermalSensorMask = 0; // The sensors the GPU has, found on the first query
 };
 
 inline void Query(const GpuInformation& gpuInfo, GpuMetrics& out)
@@ -596,6 +631,26 @@ inline void Query(const GpuInformation& gpuInfo, GpuMetrics& out)
                     s.getThermal = GET_INTERFACE(NvAPI_GPU_GetThermalSettings, queryInterface);
                     s.getCurrentVoltage =
                         reinterpret_cast<PFN_NvAPI_GPU_GetCurrentVoltage>(queryInterface(0x465F9BCFu));
+                    s.getThermalSensors =
+                        reinterpret_cast<PFN_NvAPI_GPU_ThermalGetSensors>(queryInterface(0x65FE3AADu));
+
+                    // A mask with a sensor the GPU doesn't have fails, so the sensors are asked one more at a time
+                    if (s.getThermalSensors != nullptr && s.nvapiGpu != nullptr)
+                    {
+                        for (int bit = 0; bit < 32; bit++)
+                        {
+                            NvThermalSensors sensors {};
+                            sensors.version = NvThermalSensorsVersion;
+                            sensors.mask = s.thermalSensorMask | (1u << bit);
+
+                            if (s.getThermalSensors(s.nvapiGpu, &sensors) != NVAPI_OK)
+                                break;
+
+                            s.thermalSensorMask = sensors.mask;
+                        }
+
+                        LOG_DEBUG("FPS overlay: NVAPI thermal sensor mask 0x{:X}", s.thermalSensorMask);
+                    }
                 }
             }
         }
@@ -645,6 +700,24 @@ inline void Query(const GpuInformation& gpuInfo, GpuMetrics& out)
             }
         }
 
+        if ((s.thermalSensorMask & (1u << NvHotspotSensor)) != 0)
+        {
+            NvThermalSensors sensors {};
+            sensors.version = NvThermalSensorsVersion;
+            sensors.mask = s.thermalSensorMask;
+
+            if (s.getThermalSensors(s.nvapiGpu, &sensors) == NVAPI_OK)
+            {
+                const double hotspot = sensors.temperatures[NvHotspotSensor] / 256.0;
+
+                if (hotspot > 0.0 && hotspot < 150.0)
+                {
+                    out.hotspotC = hotspot;
+                    LogSource("GPU hot spot", "NVAPI");
+                }
+            }
+        }
+
         if (!out.voltageV.has_value() && s.getCurrentVoltage != nullptr)
         {
             NvGpuVoltageStatus volt {};
@@ -687,6 +760,14 @@ struct HWiNFOReadingPrefix
     char labelUser[128];
     char unit[16];
     double value;
+};
+
+struct HWiNFOSensorPrefix
+{
+    uint32_t sensorId;
+    uint32_t sensorInstance;
+    char nameOrig[128];
+    char nameUser[128];
 };
 
 struct MAHMHeader
@@ -829,7 +910,10 @@ inline void QueryAmdCpuServer(CpuMetrics& out)
         out.voltageV = volt;
 
     if (suppTemp != 0 && temp > 0.0 && temp < 150.0)
+    {
         out.tempC = temp;
+        LogSource("CPU temperature", "AMD Adrenalin");
+    }
 
     if (suppPower != 0 && power > 0.1f && power < 1000.0f)
         out.powerW = static_cast<double>(power);
@@ -840,7 +924,16 @@ inline void QueryAmdCpuServer(CpuMetrics& out)
         SetEvent(hEvent);
 }
 
-inline void QueryHwInfo(GpuMetrics* gpu, CpuMetrics* cpu)
+// The hottest of a CPU's readings, its cores, CCDs or AMD's Tctl
+inline void KeepHottest(std::optional<double>& hottest, double value)
+{
+    if (value > 0.0 && value < 150.0 && (!hottest.has_value() || value > hottest.value()))
+        hottest = value;
+}
+
+// HWiNFO64 with Shared Memory Support enabled in its settings (the free version turns it off after 12 hours).
+// The GPU's readings are taken from the sensor named as the GPU, when there's one, so an iGPU's aren't.
+inline void QueryHwInfo(GpuMetrics* gpu, CpuMetrics* cpu, const std::string& gpuName = {})
 {
     static uint64_t lastMissTick = 0;
     const uint64_t nowTick = GetTickCount64();
@@ -863,9 +956,32 @@ inline void QueryHwInfo(GpuMetrics* gpu, CpuMetrics* cpu)
     if (base != nullptr)
     {
         const auto* hdr = reinterpret_cast<const HWiNFOHeader*>(base);
+
+        // 'DEAD' when HWiNFO closed or its shared memory got turned off
         if (hdr->signature == 0x53695748u && hdr->readingElementSize >= sizeof(HWiNFOReadingPrefix) &&
-            hdr->readingElementCount <= 4096)
+            hdr->readingElementCount <= 16384 && hdr->sensorElementSize >= sizeof(HWiNFOSensorPrefix) &&
+            hdr->sensorElementCount <= 1024)
         {
+            auto sensorName = [&](uint32_t index) -> const char*
+            {
+                if (index >= hdr->sensorElementCount)
+                    return "";
+
+                return reinterpret_cast<const HWiNFOSensorPrefix*>(base + hdr->sensorOffset +
+                                                                   index * hdr->sensorElementSize)
+                    ->nameOrig;
+            };
+
+            bool gpuSensorFound = false;
+            if (gpu != nullptr && !gpuName.empty())
+            {
+                for (uint32_t i = 0; i < hdr->sensorElementCount && !gpuSensorFound; ++i)
+                    gpuSensorFound = ContainsCaseInsensitive(sensorName(i), gpuName.c_str());
+            }
+
+            bool cpuFound = false;
+            bool gpuFound = false;
+
             for (uint32_t i = 0; i < hdr->readingElementCount; ++i)
             {
                 const auto* r = reinterpret_cast<const HWiNFOReadingPrefix*>(base + hdr->readingOffset +
@@ -875,12 +991,24 @@ inline void QueryHwInfo(GpuMetrics* gpu, CpuMetrics* cpu)
 
                 if (cpu != nullptr)
                 {
-                    if (r->readingType == 1 && !cpu->tempC.has_value() &&
+                    const bool temp = r->readingType == 1 && !ContainsCaseInsensitive(r->labelOrig, "Distance");
+
+                    // AMD's Tctl/Tdie and CCDs, Intel's package and hottest core
+                    if (temp && (ContainsCaseInsensitive(r->labelOrig, "CPU (Tctl") ||
+                                 ContainsCaseInsensitive(r->labelOrig, "CCD") ||
+                                 ContainsCaseInsensitive(r->labelOrig, "Core Max")))
+                    {
+                        KeepHottest(cpu->hotspotC, r->value);
+                        cpuFound = true;
+                    }
+
+                    if (temp && !cpu->tempC.has_value() &&
                         (ContainsCaseInsensitive(r->labelOrig, "CPU (Tctl/Tdie)") ||
                          ContainsCaseInsensitive(r->labelOrig, "CPU Die") ||
                          ContainsCaseInsensitive(r->labelOrig, "CPU Package")))
                     {
                         cpu->tempC = r->value;
+                        cpuFound = true;
                     }
                     else if (r->readingType == 5 && !cpu->powerW.has_value() &&
                              (ContainsCaseInsensitive(r->labelOrig, "CPU Package Power") ||
@@ -904,13 +1032,23 @@ inline void QueryHwInfo(GpuMetrics* gpu, CpuMetrics* cpu)
                     }
                 }
 
-                if (gpu != nullptr)
+                if (gpu != nullptr &&
+                    (!gpuSensorFound || ContainsCaseInsensitive(sensorName(r->sensorIndex), gpuName.c_str())))
                 {
-                    if (r->readingType == 1 && !gpu->tempC.has_value() &&
-                        (ContainsCaseInsensitive(r->labelOrig, "GPU Temperature") ||
-                         ContainsCaseInsensitive(r->labelOrig, "GPU Temp")))
+                    if (r->readingType == 1 && !gpu->hotspotC.has_value() &&
+                        ContainsCaseInsensitive(r->labelOrig, "GPU") &&
+                        (ContainsCaseInsensitive(r->labelOrig, "Hot Spot") ||
+                         ContainsCaseInsensitive(r->labelOrig, "Hotspot")))
+                    {
+                        gpu->hotspotC = r->value;
+                        gpuFound = true;
+                    }
+                    else if (r->readingType == 1 && !gpu->tempC.has_value() &&
+                             (ContainsCaseInsensitive(r->labelOrig, "GPU Temperature") ||
+                              ContainsCaseInsensitive(r->labelOrig, "GPU Temp")))
                     {
                         gpu->tempC = r->value;
+                        gpuFound = true;
                     }
                     else if (r->readingType == 5 && !gpu->powerW.has_value() &&
                              (ContainsCaseInsensitive(r->labelOrig, "GPU Power") ||
@@ -938,6 +1076,12 @@ inline void QueryHwInfo(GpuMetrics* gpu, CpuMetrics* cpu)
                     }
                 }
             }
+
+            if (cpuFound)
+                LogSource("CPU temperature", "HWiNFO");
+
+            if (gpuFound)
+                LogSource("GPU temperature", "HWiNFO");
         }
         UnmapViewOfFile(base);
     }
@@ -945,8 +1089,19 @@ inline void QueryHwInfo(GpuMetrics* gpu, CpuMetrics* cpu)
     CloseHandle(hMap);
 }
 
+// MSI Afterburner's hardware monitoring, its CPU readings need them shown in its monitoring settings
 inline void QueryAfterburner(GpuMetrics* gpu, CpuMetrics* cpu)
 {
+    // MONITORING_SOURCE_ID_* of the MSI Afterburner SDK
+    constexpr uint32_t srcGpuTemperature = 0x00;
+    constexpr uint32_t srcCoreClock = 0x20;
+    constexpr uint32_t srcMemoryClock = 0x22;
+    constexpr uint32_t srcGpuVoltage = 0x40;
+    constexpr uint32_t srcGpuPower = 0x60;
+    constexpr uint32_t srcCpuTemperature = 0x80;
+    constexpr uint32_t srcCpuClock = 0xA0;
+    constexpr uint32_t srcCpuPower = 0x100;
+
     static uint64_t lastMissTick = 0;
     const uint64_t nowTick = GetTickCount64();
     if (lastMissTick != 0 && nowTick - lastMissTick < 5000)
@@ -965,8 +1120,13 @@ inline void QueryAfterburner(GpuMetrics* gpu, CpuMetrics* cpu)
     if (base != nullptr)
     {
         const auto* hdr = reinterpret_cast<const MAHMHeader*>(base);
-        if (hdr->signature == 0x4D48414Du && hdr->entrySize >= sizeof(MAHMEntry) && hdr->entryCount <= 512)
+
+        // 'MAHM' as the SDK writes it, 0xDEAD once Afterburner closed
+        if (hdr->signature == 0x4D41484Du && hdr->entrySize >= sizeof(MAHMEntry) && hdr->entryCount <= 512)
         {
+            bool cpuFound = false;
+            bool gpuFound = false;
+
             for (uint32_t i = 0; i < hdr->entryCount; ++i)
             {
                 const auto* e = reinterpret_cast<const MAHMEntry*>(base + hdr->headerSize + i * hdr->entrySize);
@@ -975,28 +1135,69 @@ inline void QueryAfterburner(GpuMetrics* gpu, CpuMetrics* cpu)
 
                 if (gpu != nullptr && (e->gpu == 0 || e->gpu == 0xFFFFFFFFu))
                 {
-                    if (e->srcId == 0x00 && !gpu->tempC.has_value())
+                    // Not a source of its own, the hot spot is told by its name
+                    if (!gpu->hotspotC.has_value() && (ContainsCaseInsensitive(e->srcName, "hot spot") ||
+                                                       ContainsCaseInsensitive(e->srcName, "hotspot")))
+                    {
+                        gpu->hotspotC = e->data;
+                        gpuFound = true;
+                    }
+                    else if (e->srcId == srcGpuTemperature && !gpu->tempC.has_value())
+                    {
                         gpu->tempC = e->data;
-                    else if (e->srcId == 0x61 && !gpu->powerW.has_value())
+                        gpuFound = true;
+                    }
+                    else if (e->srcId == srcGpuPower && !gpu->powerW.has_value() &&
+                             _stricmp(e->srcUnits, "W") == 0) // Else it's percents of the power limit
+                    {
                         gpu->powerW = e->data;
-                    else if (e->srcId == 0x20 && !gpu->voltageV.has_value())
+                    }
+                    else if (e->srcId == srcGpuVoltage && !gpu->voltageV.has_value())
+                    {
                         gpu->voltageV = e->data > 10.0f ? e->data / 1000.0 : e->data;
-                    else if (e->srcId == 0x30 && !gpu->coreClockMhz.has_value())
+                    }
+                    else if (e->srcId == srcCoreClock && !gpu->coreClockMhz.has_value())
+                    {
                         gpu->coreClockMhz = static_cast<uint32_t>(std::lround(e->data));
-                    else if (e->srcId == 0x32 && !gpu->memClockMhz.has_value())
+                    }
+                    else if (e->srcId == srcMemoryClock && !gpu->memClockMhz.has_value())
+                    {
                         gpu->memClockMhz = static_cast<uint32_t>(std::lround(e->data));
+                    }
                 }
 
                 if (cpu != nullptr)
                 {
-                    if (e->srcId == 0x80 && e->gpu == 0xFFFFFFFFu && !cpu->tempC.has_value())
-                        cpu->tempC = e->data;
-                    else if (e->srcId == 0x100 && !cpu->powerW.has_value())
+                    // "CPU temperature" and one per core
+                    if (e->srcId == srcCpuTemperature && e->gpu == 0xFFFFFFFFu)
+                    {
+                        KeepHottest(cpu->hotspotC, e->data);
+
+                        if (!cpu->tempC.has_value() && _stricmp(e->srcName, "CPU temperature") == 0)
+                            cpu->tempC = e->data;
+
+                        cpuFound = true;
+                    }
+                    else if (e->srcId == srcCpuPower && !cpu->powerW.has_value())
+                    {
                         cpu->powerW = e->data;
-                    else if (e->srcId == 0xA0 && e->gpu == 0xFFFFFFFFu && !cpu->clockMhz.has_value())
+                    }
+                    else if (e->srcId == srcCpuClock && e->gpu == 0xFFFFFFFFu && !cpu->clockMhz.has_value())
+                    {
                         cpu->clockMhz = static_cast<uint32_t>(std::lround(e->data));
+                    }
                 }
             }
+
+            // Only the cores' temperatures shown
+            if (cpu != nullptr && !cpu->tempC.has_value() && cpu->hotspotC.has_value())
+                cpu->tempC = cpu->hotspotC;
+
+            if (cpuFound)
+                LogSource("CPU temperature", "MSI Afterburner");
+
+            if (gpuFound)
+                LogSource("GPU temperature", "MSI Afterburner");
         }
         UnmapViewOfFile(base);
     }
@@ -1023,7 +1224,8 @@ inline void QueryCoreTemp(CpuMetrics& cpu)
     const auto* data = static_cast<const CoreTempData*>(MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, sizeof(CoreTempData)));
     if (data != nullptr)
     {
-        if (!cpu.tempC.has_value() && data->coreCount > 0 && data->coreCount <= 256)
+        // Core Temp has the cores only, the hottest is also the CPU's temperature
+        if ((!cpu.tempC.has_value() || !cpu.hotspotC.has_value()) && data->coreCount > 0 && data->coreCount <= 256)
         {
             float maxTemp = 0.0f;
             for (uint32_t i = 0; i < data->coreCount; ++i)
@@ -1036,7 +1238,15 @@ inline void QueryCoreTemp(CpuMetrics& cpu)
                 maxTemp = std::max(maxTemp, t);
             }
             if (maxTemp > 0.0f && maxTemp < 150.0f)
-                cpu.tempC = maxTemp;
+            {
+                if (!cpu.tempC.has_value())
+                    cpu.tempC = maxTemp;
+
+                if (!cpu.hotspotC.has_value())
+                    cpu.hotspotC = maxTemp;
+
+                LogSource("CPU temperature", "Core Temp");
+            }
         }
 
         if (!cpu.voltageV.has_value() && data->vid >= 0.2f && data->vid <= 2.5f)
@@ -1055,6 +1265,230 @@ inline void QueryCoreTemp(CpuMetrics& cpu)
 }
 } // namespace SharedSensors
 
+// Linux sensors (hwmon in /sys) read through Wine's path to the host's files, under Proton there's no Windows driver
+// that gives temperatures. k10temp and zenpower (AMD CPUs), coretemp (Intel CPUs), amdgpu.
+namespace Hwmon
+{
+using PFN_wine_get_dos_file_name = LPWSTR(CDECL*)(LPCSTR);
+
+// A host path as a Windows one, empty outside Wine
+inline std::wstring DosPath(const std::string& unixPath)
+{
+    static auto toDos = []() -> PFN_wine_get_dos_file_name
+    {
+        if (!State::Instance().isRunningOnLinux)
+            return nullptr;
+
+        HMODULE kernel32 = KernelBaseProxy::GetModuleHandleW_()(L"kernel32.dll");
+        return kernel32 != nullptr ? reinterpret_cast<PFN_wine_get_dos_file_name>(
+                                         KernelBaseProxy::GetProcAddress_()(kernel32, "wine_get_dos_file_name"))
+                                   : nullptr;
+    }();
+
+    if (toDos == nullptr)
+        return {};
+
+    LPWSTR dos = toDos(unixPath.c_str());
+    if (dos == nullptr)
+        return {};
+
+    std::wstring path(dos);
+    HeapFree(GetProcessHeap(), 0, dos);
+    return path;
+}
+
+// A sysfs file's first line, sysfs files say they're 4096 bytes long so it reads what there is
+inline std::optional<std::string> ReadLine(const std::wstring& path)
+{
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return std::nullopt;
+
+    char buffer[128] {};
+    DWORD read = 0;
+    const BOOL ok = ReadFile(file, buffer, sizeof(buffer) - 1, &read, nullptr);
+    CloseHandle(file);
+
+    if (!ok || read == 0)
+        return std::nullopt;
+
+    std::string line(buffer, read);
+    if (auto end = line.find_first_of("\r\n"); end != std::string::npos)
+        line.resize(end);
+
+    return line;
+}
+
+inline std::optional<double> ReadNumber(const std::wstring& path)
+{
+    auto line = ReadLine(path);
+    if (!line.has_value() || line->empty())
+        return std::nullopt;
+
+    char* end = nullptr;
+    const double value = std::strtod(line->c_str(), &end);
+    if (end == line->c_str() || !std::isfinite(value))
+        return std::nullopt;
+
+    return value;
+}
+
+struct Device
+{
+    std::string name;  // The driver: k10temp, coretemp, amdgpu...
+    std::wstring path; // Its folder, ending in a separator
+    uint32_t vendorId = 0;
+    uint32_t deviceId = 0;
+};
+
+// The hwmon devices, listed once
+inline const std::vector<Device>& Devices()
+{
+    static const std::vector<Device> devices = []()
+    {
+        std::vector<Device> found;
+        std::wstring root = DosPath("/sys/class/hwmon");
+        if (root.empty())
+            return found;
+
+        if (root.back() != L'\\')
+            root += L'\\';
+
+        WIN32_FIND_DATAW data {};
+        HANDLE find = FindFirstFileW((root + L"hwmon*").c_str(), &data);
+        if (find == INVALID_HANDLE_VALUE)
+            return found;
+
+        do
+        {
+            Device device;
+            device.path = root + data.cFileName + L"\\";
+
+            if (auto name = ReadLine(device.path + L"name"); name.has_value())
+                device.name = name.value();
+
+            // PCI devices, the GPUs
+            if (auto vendor = ReadLine(device.path + L"device\\vendor"); vendor.has_value())
+                device.vendorId = static_cast<uint32_t>(std::strtoul(vendor->c_str(), nullptr, 16));
+
+            if (auto id = ReadLine(device.path + L"device\\device"); id.has_value())
+                device.deviceId = static_cast<uint32_t>(std::strtoul(id->c_str(), nullptr, 16));
+
+            LOG_DEBUG("FPS overlay: hwmon {} {:04X}:{:04X}", device.name, device.vendorId, device.deviceId);
+            found.push_back(std::move(device));
+        } while (FindNextFileW(find, &data));
+
+        FindClose(find);
+        return found;
+    }();
+
+    return devices;
+}
+
+// A device's temperatures in C by their label, "tempN" when they have none
+inline std::vector<std::pair<std::string, double>> Temperatures(const Device& device)
+{
+    std::vector<std::pair<std::string, double>> temps;
+
+    for (int i = 1; i <= 32; i++)
+    {
+        const std::wstring prefix = device.path + L"temp" + std::to_wstring(i);
+        auto milli = ReadNumber(prefix + L"_input");
+        if (!milli.has_value())
+            continue;
+
+        const double celsius = milli.value() / 1000.0;
+        if (celsius <= 0.0 || celsius >= 150.0)
+            continue;
+
+        temps.emplace_back(ReadLine(prefix + L"_label").value_or("temp" + std::to_string(i)), celsius);
+    }
+
+    return temps;
+}
+
+inline void QueryCpu(CpuMetrics& out)
+{
+    for (const auto& device : Devices())
+    {
+        const bool amd = device.name == "k10temp" || device.name == "zenpower";
+        if (!amd && device.name != "coretemp")
+            continue;
+
+        for (const auto& [label, celsius] : Temperatures(device))
+        {
+            // AMD: Tctl (or zenpower's Tdie) and the CCDs, Intel: the package and the cores
+            const bool package = amd ? (label == "Tctl" || label == "Tdie") : label.starts_with("Package");
+            const bool core = amd ? label.starts_with("Tccd") || label == "Tctl" : label.starts_with("Core");
+
+            if (package && (!out.tempC.has_value() || label == "Tctl"))
+                out.tempC = celsius;
+
+            if (core || package)
+                SharedSensors::KeepHottest(out.hotspotC, celsius);
+        }
+
+        if (out.tempC.has_value())
+        {
+            LogSource("CPU temperature", ("hwmon " + device.name).c_str());
+            return;
+        }
+    }
+}
+
+// amdgpu's readings for the GPU with that PCI id
+inline void QueryGpu(const GpuInformation& gpuInfo, GpuMetrics& out)
+{
+    for (const auto& device : Devices())
+    {
+        if (device.name != "amdgpu" || device.vendorId != 0x1002 ||
+            (gpuInfo.deviceId != 0 && device.deviceId != gpuInfo.deviceId))
+        {
+            continue;
+        }
+
+        for (const auto& [label, celsius] : Temperatures(device))
+        {
+            if (label == "edge" && !out.tempC.has_value())
+                out.tempC = celsius;
+            else if (label == "junction" && !out.hotspotC.has_value())
+                out.hotspotC = celsius;
+        }
+
+        // Only the hot spot on some APUs
+        if (!out.tempC.has_value() && out.hotspotC.has_value())
+            out.tempC = out.hotspotC;
+
+        // Micro watts, the average on older kernels
+        if (!out.powerW.has_value())
+        {
+            auto power = ReadNumber(device.path + L"power1_average");
+            if (!power.has_value() || power.value() <= 0.0)
+                power = ReadNumber(device.path + L"power1_input");
+
+            if (power.has_value() && power.value() > 0.0)
+                out.powerW = power.value() / 1'000'000.0;
+        }
+
+        // Millivolts
+        if (auto mv = ReadNumber(device.path + L"in0_input"); !out.voltageV.has_value() && mv && *mv > 0.0)
+            out.voltageV = *mv / 1000.0;
+
+        // Hertz, sclk and mclk
+        if (auto hz = ReadNumber(device.path + L"freq1_input"); !out.coreClockMhz.has_value() && hz && *hz > 0.0)
+            out.coreClockMhz = static_cast<uint32_t>(std::lround(*hz / 1'000'000.0));
+
+        if (auto hz = ReadNumber(device.path + L"freq2_input"); !out.memClockMhz.has_value() && hz && *hz > 0.0)
+            out.memClockMhz = static_cast<uint32_t>(std::lround(*hz / 1'000'000.0));
+
+        if (out.tempC.has_value())
+            LogSource("GPU temperature", "hwmon amdgpu");
+
+        return;
+    }
+}
+} // namespace Hwmon
 // Windows PDH effective CPU frequency (universal fallback for CPU clock MHz)
 namespace PdhCpu
 {
@@ -1329,12 +1763,18 @@ inline GpuMetrics PollGpu(const GpuInformation& gpuInfo)
             if (auto mem = Adl::ReadSensor(pmLog, Adl::SENSOR_CLK_MEMCLK); mem && *mem > 0)
                 out.memClockMhz = static_cast<uint32_t>(*mem);
 
+            if (auto hs = Adl::ReadSensor(pmLog, Adl::SENSOR_TEMP_HOTSPOT); hs && *hs > 0)
+                out.hotspotC = static_cast<double>(*hs);
+
             if (auto temp = Adl::ReadSensor(pmLog, Adl::SENSOR_TEMP_EDGE); temp && *temp > 0)
                 out.tempC = static_cast<double>(*temp);
-            else if (auto hs = Adl::ReadSensor(pmLog, Adl::SENSOR_TEMP_HOTSPOT); hs && *hs > 0)
-                out.tempC = static_cast<double>(*hs);
+            else if (out.hotspotC.has_value())
+                out.tempC = out.hotspotC;
             else if (auto soc = Adl::ReadSensor(pmLog, Adl::SENSOR_TEMP_SOC); soc && *soc > 0)
                 out.tempC = static_cast<double>(*soc);
+
+            if (out.tempC.has_value())
+                LogSource("GPU temperature", "ADL");
 
             if (auto mv = Adl::ReadSensor(pmLog, Adl::SENSOR_GFX_VOLTAGE); mv && *mv > 0)
                 out.voltageV = static_cast<double>(*mv) / 1000.0;
@@ -1355,12 +1795,19 @@ inline GpuMetrics PollGpu(const GpuInformation& gpuInfo)
     else if (gpuInfo.vendorId == VendorId::Nvidia)
     {
         Nvidia::Query(gpuInfo, out);
+
+        if (out.tempC.has_value())
+            LogSource("GPU temperature", "NVML / NVAPI");
     }
 
-    if (!out.tempC.has_value() || !out.powerW.has_value() || !out.voltageV.has_value() ||
+    // Under Proton there's no ADL, the kernel has amdgpu's sensors
+    if (State::Instance().isRunningOnLinux && gpuInfo.vendorId == VendorId::AMD)
+        Hwmon::QueryGpu(gpuInfo, out);
+
+    if (!out.tempC.has_value() || !out.hotspotC.has_value() || !out.powerW.has_value() || !out.voltageV.has_value() ||
         !out.coreClockMhz.has_value() || !out.memClockMhz.has_value())
     {
-        SharedSensors::QueryHwInfo(&out, nullptr);
+        SharedSensors::QueryHwInfo(&out, nullptr, gpuInfo.name);
         SharedSensors::QueryAfterburner(&out, nullptr);
     }
 
@@ -1373,8 +1820,12 @@ inline CpuMetrics PollCpu(const GpuInformation& gpuInfo)
 {
     CpuMetrics out {};
 
-    // 1. AMD Adrenalin CPU Metrics Server (provides Clock, Voltage, Temp, Package Power in user mode)
-    SharedSensors::QueryAmdCpuServer(out);
+    // 1. AMD Adrenalin CPU Metrics Server (provides Clock, Voltage, Temp, Package Power in user mode), under Proton
+    // the kernel's sensors
+    if (State::Instance().isRunningOnLinux)
+        Hwmon::QueryCpu(out);
+    else
+        SharedSensors::QueryAmdCpuServer(out);
 
     // 2. AMD APU sensors via ADL2 if any field is still missing
     if (!out.tempC.has_value() || !out.powerW.has_value() || !out.clockMhz.has_value())
@@ -1404,11 +1855,24 @@ inline CpuMetrics PollCpu(const GpuInformation& gpuInfo)
     }
 
     // 3. HWiNFO64 / MSI Afterburner / CoreTemp shared memory fallback (Intel & AMD)
-    if (!out.tempC.has_value() || !out.powerW.has_value() || !out.voltageV.has_value() || !out.clockMhz.has_value())
+    if (!out.tempC.has_value() || !out.hotspotC.has_value() || !out.powerW.has_value() || !out.voltageV.has_value() ||
+        !out.clockMhz.has_value())
     {
         SharedSensors::QueryHwInfo(nullptr, &out);
         SharedSensors::QueryAfterburner(nullptr, &out);
         SharedSensors::QueryCoreTemp(out);
+    }
+
+    // Once, so a log of a missing temperature says why
+    static bool missingLogged = false;
+    if (!out.tempC.has_value() && !missingLogged)
+    {
+        missingLogged = true;
+        if (State::Instance().isRunningOnLinux)
+            LOG_INFO("FPS overlay: no CPU temperature, no k10temp, zenpower or coretemp sensor in /sys/class/hwmon");
+        else
+            LOG_INFO("FPS overlay: no CPU temperature, it needs HWiNFO with Shared Memory Support, MSI Afterburner "
+                     "with the CPU temperature monitored, Core Temp or AMD Adrenalin running");
     }
 
     // 4. Windows PDH effective CPU clock fallback (works on all Intel & AMD CPUs)

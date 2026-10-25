@@ -185,8 +185,18 @@ enum FpsOverlay : uint32_t
     FpsOverlay_DetailedGraph,
     FpsOverlay_Full,
     FpsOverlay_FullGraph,
-    FpsOverlay_ReflexTimings,
+    FpsOverlay_LowLatencyTimings,
+    FpsOverlay_Custom, // FpsOverlayRows and FpsOverlayFpsRow
     FpsOverlay_COUNT,
+};
+
+// What the FPS row shows with the FPS
+enum FpsOverlayFpsRow : uint32_t
+{
+    FpsOverlayFpsRow_JustFps,   // Only the number
+    FpsOverlayFpsRow_FrameTime, // The API, frame time, frame generation and upscaler
+    FpsOverlayFpsRow_Average,   // The API, average FPS, frame generation and upscaler
+    FpsOverlayFpsRow_COUNT,
 };
 
 // Output scaling downscaler
@@ -383,8 +393,8 @@ class Config
     CustomOptional<FpsOverlayPos> FpsOverlayPosition { FpsOverlayPos_TopLeft };
     /// 0 Only FPS, 1 +Avg FPS & Upscaler info 2 +Frame Time,
     /// 3 +Upscaler Time, 4 +Frame Time Graph, 5 +Upscaler Time Graph
-    /// 6 +Reflex timings
-    CustomOptional<FpsOverlay> FpsOverlayType { FpsOverlay_JustFPS };
+    /// 6 +Low latency timings, 7 Custom rows
+    CustomOptional<FpsOverlay> FpsOverlayType { FpsOverlay_FullGraph };
     CustomOptional<int> FpsShortcutKey { VK_PRIOR };
     CustomOptional<int> FpsCycleShortcutKey { VK_NEXT };
     CustomOptional<bool> FpsOverlayHorizontal { false };
@@ -392,8 +402,6 @@ class Config
     CustomOptional<bool> FpsOverlayShowLows { false };
     CustomOptional<bool> FpsOverlayShowLatency { false };
     CustomOptional<FpsOverlayLatency> FpsOverlayLatencyType { FpsOverlayLatency_Display };
-    CustomOptional<bool, NoDefault> FpsOverlayShowFrameTime;   // No value means Detailed and above
-    CustomOptional<bool> FpsOverlayShowUpscalerTime { false }; // Also below the Full overlay type
     CustomOptional<bool> FpsOverlayShowFGTime { false };
     CustomOptional<bool> FpsOverlayShowFpsCost { false };
     CustomOptional<bool> FpsOverlayShowPointOneLow { false };
@@ -407,12 +415,15 @@ class Config
     CustomOptional<bool> FpsOverlayShowCommitRam { false };
     CustomOptional<bool> FpsOverlayShowHardwareNames { false };
     CustomOptional<bool> FpsOverlayShowUsage { false };        // CPU and GPU usage on their rows
+    CustomOptional<bool> FpsOverlayShowGpuHotspot { false };   // The GPU's hottest sensor on its row
+    CustomOptional<bool> FpsOverlayShowCpuHotspot { false };   // The CPU's hottest core or CCD on its row
     CustomOptional<bool> FpsOverlayShowClock { false };        // Date and time row
     CustomOptional<bool> FpsOverlayShowSessionTimer { false }; // Time since OptiScaler started, on the FPS row
     CustomOptional<bool> FpsOverlayCompactLabels { false };
-    // Comma separated row keys: fps, upscale, latency, frametime, upscaler, bottleneck, refresh, vram, gpu, cpu, ram,
-    // clock. No value means that order
-    CustomOptional<std::string, NoDefault> FpsOverlayRowOrder;
+    // Rows of the Custom overlay type in their order, comma separated keys, hidden ones start with -.
+    // No value means the default overlay type's rows
+    CustomOptional<std::string, NoDefault> FpsOverlayRows;
+    CustomOptional<FpsOverlayFpsRow> FpsOverlayFpsRowType { FpsOverlayFpsRow_Average }; // Of the Custom type
     CustomOptional<float, NoDefault> FpsOverlayRowSpacing; // No value means the default spacing
     // Milliseconds the values that change every frame are kept, 0 updates them every frame
     CustomOptional<float> FpsOverlayUpdateInterval { 0.0f };
@@ -426,19 +437,19 @@ class Config
     CustomOptional<std::string, NoDefault> FpsOverlayFont;
     CustomOptional<float, NoDefault> FpsOverlayFontSize; // No value means the menu font size
     CustomOptional<float> FpsOverlayLetterSpacing { 0.0f };
-    // Labels are the metric names, values their numbers
+    // Labels are the names like FPS:, values their numbers
     CustomOptional<float> FpsOverlayLabelScale { 1.0f };
     CustomOptional<float> FpsOverlayValueScale { 1.0f };
     // 0xRRGGBB, used when the overlays don't use the theme colors
-    CustomOptional<uint32_t> FpsOverlayLabelColor { 0xFFFFFF };
+    CustomOptional<uint32_t> FpsOverlayLabelColor { 0xD9D9D9 };
     CustomOptional<uint32_t> FpsOverlayValueColor { 0xFFFFFF };
     CustomOptional<uint32_t> FpsOverlayGraphColor { 0x00FF00 };
     CustomOptional<uint32_t> FpsOverlayBGColor { 0x000000 };
-    CustomOptional<FpsOverlayShadow> FpsOverlayShadowType { FpsOverlayShadow_Off };
+    CustomOptional<FpsOverlayShadow> FpsOverlayShadowType { FpsOverlayShadow_Shadow };
     CustomOptional<float> FpsOverlayShadowStrength { 0.5f };
     CustomOptional<uint32_t> FpsOverlayShadowColor { 0x000000 };
-    CustomOptional<float, NoDefault> FpsOverlayRounding; // No value means same as MenuRounding
-    CustomOptional<float> MenuRounding { 2.0f };         // Window corner radius, 0 is square
+    CustomOptional<float> FpsOverlayRounding { 4.0f };
+    CustomOptional<float> MenuRounding { 2.0f };
     CustomOptional<bool> UseHQFont { true };
     CustomOptional<bool> DisableSplash { false };
     CustomOptional<float> FontSize { 14.0f };
@@ -796,14 +807,14 @@ class Config
 
     std::vector<std::string> GetConfigLog();
 
-    // The FPS overlay's settings as a code to copy, and applying a copied one: the ones that differ from the
-    // defaults, so they can be kept across updates and shared without another file
+    // The FPS overlay's settings that differ from the defaults as a code, to keep them outside the ini and share
+    // them without a file
     std::string ExportOverlaySettings();
-    bool ImportOverlaySettings(const std::string& code);
+    bool ImportOverlaySettings(std::string_view code);
 
-    // A preset's settings, the code's text without base64: Key=Value lines, keys without the FpsOverlay prefix.
-    // ShowFps stays as it is.
-    bool ApplyOverlayPreset(std::string_view text);
+    // A code's settings as text, also a preset: Key=Value separated by ';', keys without the FpsOverlay prefix.
+    // What it doesn't list goes back to the default.
+    bool ApplyOverlaySettings(std::string_view text);
 
     static Config* Instance();
 
@@ -819,7 +830,6 @@ class Config
     // The FPS overlay's keys of the Menu section: read when loading the ini, or assigned for a pasted code
     void ReadOverlaySettings(bool assign);
     void WriteOverlaySettings();
-    bool ApplyOverlayText(const std::string& text); // A code's text, what it doesn't list goes back to the default
 
     std::optional<std::string> readString(std::string section, std::string key, bool lowercase = false);
     std::optional<std::wstring> readWString(std::string section, std::string key, bool lowercase = false);
