@@ -34,7 +34,7 @@
 
 ## 🎬 Overview
 
-What the Venom OSD looks like in game (Star Wars Outlaws):
+Venom OSD Options:
 
 https://github.com/user-attachments/assets/191a3007-0457-4b5d-a357-0ee303b0d583
 
