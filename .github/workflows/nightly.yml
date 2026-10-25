@@ -161,10 +161,32 @@ jobs:
         [IO.File]::WriteAllText("$PWD\$name.7z.sha256", "$hash  $name.7z`n")
         "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+    # Done before the release so the release tag sits on a commit made now (always made, even with no
+    # changelog change): a tag on an older commit makes the nightly sink below newer releases
+    - name: Record in changelog
+      id: changelog
+      if: steps.merge.outputs.conflict == 'false'
+      working-directory: venom
+      run: |
+        git config user.name "LorenzoKy"
+        git config user.email "136495843+LorenzoKy@users.noreply.github.com"
+        git add CHANGELOG-Opti-Venom.md
+        export TZ=UTC GIT_AUTHOR_DATE="$(date -u +%Y-%m-%dT%H:%M:%S+0000)"
+        export GIT_COMMITTER_DATE="$GIT_AUTHOR_DATE"
+        git commit -q --allow-empty -m "Changelog: ${{ steps.find.outputs.ours }}"
+        for i in 1 2 3; do
+          if git pull -q --rebase origin main && git push -q origin HEAD:main; then
+            echo "target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          sleep 10
+        done
+        echo "::warning::Could not push the changelog row, the release will be dated by the commit it is built from"
+
     - name: Publish pre-release
       if: steps.merge.outputs.conflict == 'false'
       run: |
         sha="${{ steps.find.outputs.sha }}"
+        target="${{ steps.changelog.outputs.target }}"
         name="${{ steps.package.outputs.name }}"
         {
           echo "Automatic build: the official OptiScaler nightly of ${{ steps.find.outputs.date }} plus the Opti-Venom changes. Not tested in game, use the [stable releases]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/latest) if you want something checked."
@@ -184,26 +206,12 @@ jobs:
         tag="${{ steps.find.outputs.ours }}"
         gh release delete "$tag" -R "$GITHUB_REPOSITORY" --cleanup-tag -y 2>/dev/null || true
         gh release create "$tag" "$name.7z" "$name.7z.sha256" -R "$GITHUB_REPOSITORY" \
-          --target "$GITHUB_SHA" --prerelease --latest=false \
+          --target "${target:-$GITHUB_SHA}" --prerelease --latest=false \
           --title "OptiScaler Venom nightly ${{ steps.find.outputs.date }}" --notes-file notes.md
         # A conflict that was solved closes its issue
         for n in $(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict --state open --json number --jq '.[].number'); do
           gh issue close "$n" -R "$GITHUB_REPOSITORY" --comment "Solved: $tag was built."
         done
-
-    - name: Record in changelog
-      if: steps.merge.outputs.conflict == 'false'
-      working-directory: venom
-      run: |
-        git config user.name "LorenzoKy"
-        git config user.email "136495843+LorenzoKy@users.noreply.github.com"
-        git add CHANGELOG-Opti-Venom.md
-        git diff --cached --quiet && exit 0
-        export TZ=UTC GIT_AUTHOR_DATE="$(date -u +%Y-%m-%dT%H:%M:%S+0000)"
-        export GIT_COMMITTER_DATE="$GIT_AUTHOR_DATE"
-        git commit -q -m "Changelog: ${{ steps.find.outputs.ours }}"
-        for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep 10; done
-        echo "::warning::Could not push the changelog row"
 
     - name: Remove old nightlies
       if: steps.merge.outputs.conflict == 'false'
