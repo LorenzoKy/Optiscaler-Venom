@@ -1,8 +1,10 @@
 # RULE: the newest release (stable, pre-release or nightly) must always be listed above the older ones.
-# GitHub orders releases by the date of the commit the tag points to: tag a commit made at release time,
-# never an old one (see also nightly.yml).
-# RULE: before a release, rebase the Venom patches on upstream so they have at least that day's official
-# nightly, and write their commit in .github/venom-patch: the "Check sources" step refuses anything else.
+# GitHub orders releases by the UTC day of the commit the tag points to, and releases of the same day by tag name
+# (descending), not by time: tag a commit made at release time, and on a day with other releases use a tag that sorts
+# after theirs (betas opti-venom-vX.Y-betaN, the stable opti-venom-vX.Y.0). "Check order" refuses anything else,
+# see .github/scripts/check-release-order.sh and nightly.yml.
+# RULE: before a release, rebase the Venom patches on the latest official upstream nightly and write their commit in
+# .github/venom-patch: the "Check sources" step refuses anything else.
 name: Build and release
 
 on:
@@ -53,6 +55,14 @@ jobs:
         fi
         echo "Patches $patch have upstream nightly $tag ($nightly)"
 
+    # The new release must be listed above every other one on the Releases page
+    - name: Check order
+      if: github.ref_type == 'tag'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash .github/scripts/check-release-order.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$(git log -1 --format=%cI "$GITHUB_SHA")"
+
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v3
 
@@ -86,6 +96,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         draft: true
+        prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
         name: OptiScaler Venom ${{ steps.package.outputs.version }}
         body_path: .github/release-notes/${{ github.ref_name }}.md
         files: |

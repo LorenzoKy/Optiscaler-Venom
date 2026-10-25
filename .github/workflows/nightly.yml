@@ -1,6 +1,8 @@
 # RULE: the newest release (stable, pre-release or nightly) must always be listed above the older ones.
-# GitHub orders releases by the date of the commit the tag points to, so every release tag must sit on a
-# commit made at publish time (nightly: the "Changelog" commit below; manual releases: tag a fresh commit).
+# GitHub orders releases by the UTC day of the commit the tag points to, and releases of the same day by tag name
+# (descending), not by time: every release tag must sit on a commit made at publish time (nightly: the "Changelog"
+# commit below; manual releases: tag a fresh commit) and .github/scripts/check-release-order.sh must pass. A nightly
+# sorts below a release of its day, so it isn't built on a day a release is already out.
 # Every day: takes the latest official OptiScaler nightly, applies the Opti-Venom
 # patches (branch opti-venom of LorenzoKy/OptiScaler) on the same upstream commit,
 # builds it and publishes a pre-release. On a conflict it skips the build and opens an issue.
@@ -54,6 +56,10 @@ jobs:
       url: ${{ steps.find.outputs.url }}
 
     steps:
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github/scripts
+
     - name: Find upstream nightly
       id: find
       run: |
@@ -94,6 +100,11 @@ jobs:
             echo "${last% *}, released today, already has $tag and the current Venom changes: no nightly needed"
             echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
+        fi
+        # It must be listed above every other release, also when forced: a release already out today stays above it
+        if ! ORDER_LEVEL=notice bash .github/scripts/check-release-order.sh "$GITHUB_REPOSITORY" "$ours" "$(date -u +%FT%TZ)"; then
+          echo "::warning::$ours not built: it wouldn't be listed as the newest release, the next day's nightly will be"
+          echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
         fi
         {
           echo "build=true"; echo "tag=$tag"; echo "sha=$sha"; echo "date=$date"; echo "ours=$ours"

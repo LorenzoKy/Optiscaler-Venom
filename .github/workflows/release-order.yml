@@ -1,0 +1,30 @@
+# RULE: the newest release (stable, pre-release or nightly) must always be listed above the older ones.
+# After every publish: the release listed first on the Releases page must be the last one published. If it isn't,
+# this fails and GitHub sends a mail. The API lists releases in the page's order.
+name: Release order
+
+on:
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Newest release on top
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        releases=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+          --jq '.[] | select(.draft | not) | "\(.published_at) \(.tag_name)"')
+        first=$(head -n 1 <<< "$releases" | cut -d' ' -f2)
+        newest=$(sort -r <<< "$releases" | head -n 1 | cut -d' ' -f2)
+        if [ "$first" != "$newest" ]; then
+          echo "::error::$newest is the last published release but $first is listed above it: see .github/scripts/check-release-order.sh"
+          exit 1
+        fi
+        echo "$first, the last published release, is listed first"
