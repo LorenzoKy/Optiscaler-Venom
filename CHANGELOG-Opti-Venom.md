@@ -104,7 +104,9 @@ First release: upstream OptiScaler plus a reworked FPS overlay. With default set
 
 Automatic and **not tested**: the official OptiScaler nightly of the day plus the Venom changes (see the [README](README.md#-nightly-builds-always-up-to-date-not-tested)). Newest first; each line is added by the build itself.
 
-| Build | Upstream nightly | Upstream commit (date) | Venom commit (date) |
-| --- | --- | --- | --- |
+Each build's page lists the OptiScaler changes since the previous nightly and the Venom changes in it. Only the last 14 nightlies stay downloadable.
+
+| Date | Build | OptiScaler | Venom | Changes |
+| --- | --- | --- | --- | --- |
 <!-- nightly-rows -->
-| `opti-venom-nightly-20261024` | [nightly-20261024](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261024) (2026-10-24) | [`fd3a45a6`](https://github.com/optiscaler/OptiScaler/commit/fd3a45a6cac6d610a35c570479f80dae95ca4eac) (2026-10-23) | [`8037f10a`](https://github.com/LorenzoKy/OptiScaler/commit/8037f10a7a5ce960493e6174902dfb85b5b2ea16) (2026-10-24) |
+| 2026-10-24 | [**nightly 20261024**](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-nightly-20261024) | [`fd3a45a6`](https://github.com/optiscaler/OptiScaler/commit/fd3a45a6cac6d610a35c570479f80dae95ca4eac) · [nightly-20261024](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261024) | [`8037f10a`](https://github.com/LorenzoKy/OptiScaler/commit/8037f10a7a5ce960493e6174902dfb85b5b2ea16) | 5 Venom |
