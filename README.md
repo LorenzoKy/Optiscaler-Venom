@@ -20,7 +20,7 @@
 
 <br />
 
-**OptiScaler Venom** (by LorenzoKy, LKY) is a community build of [OptiScaler](https://github.com/optiscaler/OptiScaler) that follows the latest upstream development and adds various features and additions that are unlikely to be seen in the regular Optiscaler.
+**OptiScaler Venom** (by LorenzoKy) is a community build of [OptiScaler](https://github.com/optiscaler/OptiScaler) that follows the latest upstream development and adds various features and additions that are unlikely to be seen in the regular Optiscaler.
 
 > [!NOTE]
 > This is an unofficial build. Please don't report issues with it to the OptiScaler team: open them [here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) instead. If a problem also happens with the official [nightly](https://github.com/optiscaler/OptiScaler/releases/tag/nightly), it's an upstream one.
