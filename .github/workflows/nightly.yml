@@ -7,6 +7,8 @@
 # GitHub starts scheduled runs late, often by hours (upstream's 04:00 UTC nightly comes out around 09:00 UTC),
 # so a quick check runs every hour and the build starts at the first check that finds today's upstream nightly
 # not built yet. If it is still missing at 20:00 Italian time the check fails, so GitHub sends a mail.
+# Two-way sync: a nightly is published only if the patch branch has the latest release (.github/venom-patch),
+# and none is needed on a day a release came out with the current patches on that nightly.
 name: Nightly
 
 on:
@@ -79,6 +81,20 @@ jobs:
           --jq "[.workflow_runs[] | select(.run_started_at <= \"$published\")][0].run_started_at")
         sha=$(gh api "repos/$UPSTREAM/commits?sha=master&until=${started:-$published}&per_page=1" --jq '.[0].sha')
         [ -z "$sha" ] && { echo "::error::No upstream commit found before $published"; exit 1; }
+        # Not needed when a Venom release came out today with the current patches on this nightly or a newer master
+        patch_head=$(gh api "repos/$PATCH_REPO/commits/$PATCH_BRANCH" --jq .sha)
+        release_patch=$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/venom-patch" --jq .content 2>/dev/null \
+          | base64 -d 2>/dev/null | tr -d '[:space:]' || true)
+        last=$(gh release list -R "$GITHUB_REPOSITORY" -L 30 --json tagName,publishedAt,isDraft \
+          --jq '[.[] | select(.isDraft | not) | select(.tagName | startswith("opti-venom-nightly-") | not)][0] | .tagName + " " + .publishedAt')
+        last_day=${last#* }
+        if [ "${{ inputs.force }}" != "true" ] && [ "${last_day:0:10}" = "$(date -u +%F)" ] && [ "$release_patch" = "$patch_head" ]; then
+          status=$(gh api "repos/$PATCH_REPO/compare/$sha...$patch_head" --jq .status 2>/dev/null || true)
+          if [ "$status" = "ahead" ] || [ "$status" = "identical" ]; then
+            echo "${last% *}, released today, already has $tag and the current Venom changes: no nightly needed"
+            echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+        fi
         {
           echo "build=true"; echo "tag=$tag"; echo "sha=$sha"; echo "date=$date"; echo "ours=$ours"
           echo "url=https://github.com/$NIGHTLY_REPO/releases/tag/$tag"
@@ -115,10 +131,29 @@ jobs:
         cd src
         git checkout -q --detach "$SHA"
         git fetch -q "https://github.com/$PATCH_REPO.git" "$PATCH_BRANCH:venom-patch"
+        # The nightly must have everything of the latest Venom release
+        released=$(tr -d '[:space:]' < ../venom/.github/venom-patch 2>/dev/null || true)
+        if [ -n "$released" ]; then
+          git fetch -q "https://github.com/$PATCH_REPO.git" "$released" 2>/dev/null || true
+          if ! git merge-base --is-ancestor "$released" venom-patch 2>/dev/null; then
+            echo "::error::$PATCH_BRANCH doesn't have the latest release's commit $released: push the release's patches there first"
+            exit 1
+          fi
+        fi
         # Only our commits: those of the patch branch that upstream master doesn't have
         base=$(git merge-base venom-patch origin/master)
         git log --reverse --format="- [\`%h\`](https://github.com/$PATCH_REPO/commit/%H) %s" "$base..venom-patch" > ../patches.txt
+        # Patches already on a newer master than the nightly's: built as they are, they have the nightly
+        upstream=$SHA
+        newer=false
+        if [ "$base" != "$SHA" ] && git merge-base --is-ancestor "$SHA" "$base"; then
+          upstream=$base
+          newer=true
+          git checkout -q --detach "$base"
+        fi
         {
+          echo "upstream_sha=$upstream"
+          echo "newer=$newer"
           echo "base=$base"
           echo "patch=$(git rev-parse --short=8 venom-patch)"
           echo "patch_sha=$(git rev-parse venom-patch)"
@@ -166,6 +201,8 @@ jobs:
       id: upstream
       if: steps.merge.outputs.conflict == 'false'
       working-directory: src
+      env:
+        SHA: ${{ steps.merge.outputs.upstream_sha }}
       run: |
         prev=$(sed -n '/<!-- nightly-rows -->/,$p' ../venom/CHANGELOG-Opti-Venom.md | grep '^|' | grep -vF "$OURS" | head -1 \
           | grep -oE "github.com/$UPSTREAM/commit/[0-9a-f]{40}" | head -1 | grep -oE '[0-9a-f]{40}$' || true)
@@ -198,6 +235,8 @@ jobs:
 
     - name: Changelog row
       if: steps.merge.outputs.conflict == 'false'
+      env:
+        SHA: ${{ steps.merge.outputs.upstream_sha }}
       run: |
         d="$DATE"
         psha="${{ steps.merge.outputs.patch_sha }}"
@@ -253,6 +292,8 @@ jobs:
 
     - name: Publish pre-release
       if: steps.merge.outputs.conflict == 'false'
+      env:
+        SHA: ${{ steps.merge.outputs.upstream_sha }}
       run: |
         target="${{ steps.changelog.outputs.target }}"
         name="${{ steps.package.outputs.name }}"
@@ -264,7 +305,11 @@ jobs:
           echo
           echo "| | Built from | Date |"
           echo "| --- | --- | --- |"
-          echo "| **OptiScaler** | nightly [$TAG]($NIGHTLY_URL), \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA) | ${{ steps.merge.outputs.upstream_date }} |"
+          if [ "${{ steps.merge.outputs.newer }}" = "true" ]; then
+            echo "| **OptiScaler** | \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA), newer than nightly [$TAG]($NIGHTLY_URL) | ${{ steps.merge.outputs.upstream_date }} |"
+          else
+            echo "| **OptiScaler** | nightly [$TAG]($NIGHTLY_URL), \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA) | ${{ steps.merge.outputs.upstream_date }} |"
+          fi
           echo "| **Venom** | [\`$PATCH_BRANCH\`](https://github.com/$PATCH_REPO/tree/$PATCH_BRANCH) at [\`${{ steps.merge.outputs.patch }}\`](https://github.com/$PATCH_REPO/commit/${{ steps.merge.outputs.patch_sha }}) | ${{ steps.merge.outputs.patch_date }} |"
           echo
           if [ "${{ steps.upstream.outputs.since }}" = "last" ]; then

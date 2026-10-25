@@ -1,6 +1,8 @@
 # RULE: the newest release (stable, pre-release or nightly) must always be listed above the older ones.
 # GitHub orders releases by the date of the commit the tag points to: tag a commit made at release time,
 # never an old one (see also nightly.yml).
+# RULE: before a release, rebase the Venom patches on upstream so they have at least that day's official
+# nightly, and write their commit in .github/venom-patch: the "Check sources" step refuses anything else.
 name: Build and release
 
 on:
@@ -20,6 +22,36 @@ jobs:
       with:
         fetch-depth: 0
         submodules: 'true'
+
+    # A release is the Venom patches as they are in .github/venom-patch, and they must have the latest
+    # official OptiScaler nightly (the nightlies in turn must have the latest release, see nightly.yml)
+    - name: Check sources
+      if: github.ref_type == 'tag'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        UPSTREAM: optiscaler/OptiScaler
+        NIGHTLY_REPO: optiscaler/OptiScaler-nightly
+        PATCH_REPO: LorenzoKy/OptiScaler
+      run: |
+        patch=$(tr -d '[:space:]' < .github/venom-patch)
+        git fetch -q "https://github.com/$PATCH_REPO.git" "$patch"
+        if ! git diff --quiet "$patch" HEAD -- . ':(exclude).github' ':(exclude)CHANGELOG-Opti-Venom.md' \
+          ':(exclude)README.md' ':(exclude)README-OptiScaler.md'; then
+          git diff --stat "$patch" HEAD -- . ':(exclude).github' ':(exclude)CHANGELOG-Opti-Venom.md' \
+            ':(exclude)README.md' ':(exclude)README-OptiScaler.md'
+          echo "::error::The sources differ from $PATCH_REPO@$patch (.github/venom-patch)"; exit 1
+        fi
+        tag=$(gh release list -R "$NIGHTLY_REPO" -L 1 --json tagName --jq '.[0].tagName')
+        published=$(gh release view "$tag" -R "$NIGHTLY_REPO" --json publishedAt --jq .publishedAt)
+        started=$(gh api "repos/$NIGHTLY_REPO/actions/runs?status=success&per_page=30" \
+          --jq "[.workflow_runs[] | select(.run_started_at <= \"$published\")][0].run_started_at")
+        nightly=$(gh api "repos/$UPSTREAM/commits?sha=master&until=${started:-$published}&per_page=1" --jq '.[0].sha')
+        git fetch -q "https://github.com/$UPSTREAM.git" "$nightly"
+        if ! git merge-base --is-ancestor "$nightly" "$patch"; then
+          echo "::error::Not up to date with the latest OptiScaler nightly $tag ($nightly): rebase the patches first"; exit 1
+        fi
+        echo "Patches $patch have upstream nightly $tag ($nightly)"
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v3
