@@ -1,3 +1,6 @@
+# RULE: the newest release (stable, pre-release or nightly) must always be listed above the older ones.
+# GitHub orders releases by the date of the commit the tag points to: tag a commit made at release time,
+# never an old one (see also nightly.yml).
 name: Build and release
 
 on:

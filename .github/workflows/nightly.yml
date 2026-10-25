@@ -1,3 +1,6 @@
+# RULE: the newest release (stable, pre-release or nightly) must always be listed above the older ones.
+# GitHub orders releases by the date of the commit the tag points to, so every release tag must sit on a
+# commit made at publish time (nightly: the "Changelog" commit below; manual releases: tag a fresh commit).
 # Every day: takes the latest official OptiScaler nightly, applies the Opti-Venom
 # patches (branch opti-venom of LorenzoKy/OptiScaler) on the same upstream commit,
 # builds it and publishes a pre-release. On a conflict it skips the build and opens an issue.
@@ -5,7 +8,7 @@ name: Nightly
 
 on:
   schedule:
-    - cron: "0 11 * * *"   # upstream nightlies come out around 09:00 UTC
+    - cron: "0 12 * * *"   # cron is UTC (no DST): upstream nightlies come out 08:00-11:50 UTC, 12:00 UTC = 13:00 CET / 14:00 CEST
   workflow_dispatch:
     inputs:
       nightly_tag:
