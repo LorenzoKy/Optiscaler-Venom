@@ -8,7 +8,7 @@ name: Nightly
 
 on:
   schedule:
-    - cron: "0 12 * * *"   # cron is UTC (no DST): upstream nightlies come out 08:00-11:50 UTC, 12:00 UTC = 13:00 CET / 14:00 CEST
+    - cron: "0 10,12 * * *"   # UTC (no DST). Upstream nightlies come out 08:00-11:50 UTC: 10:00 takes the usual ones, 12:00 the late ones (already released = skipped)
   workflow_dispatch:
     inputs:
       nightly_tag:
