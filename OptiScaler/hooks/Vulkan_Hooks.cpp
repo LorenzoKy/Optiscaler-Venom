@@ -564,11 +564,8 @@ static VkResult hkvkCreateInstance(const VkInstanceCreateInfo* pCreateInfo, cons
             _instanceApiVersions[*pInstance] = requestedApiVersion;
         }
 
-        if (!State::Instance().creatingD3DDevice)
-        {
-            State::Instance().VulkanInstance = *pInstance;
-            LOG_DEBUG("State::Instance().VulkanInstance captured: {0:X}", (UINT64) State::Instance().VulkanInstance);
-        }
+        State::Instance().VulkanInstance = *pInstance;
+        LOG_DEBUG("State::Instance().VulkanInstance captured: {0:X}", (UINT64) State::Instance().VulkanInstance);
 
 #ifdef VULKAN_DEBUG_LAYER
         auto address = vkGetInstanceProcAddr(State::Instance().VulkanInstance, "vkCreateDebugUtilsMessengerEXT");
@@ -712,16 +709,12 @@ static VkResult hkvkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevice
             // Disabled to prevent unnecessary object release
             // MenuOverlayVk::DestroyVulkanObjects(false);
 
-            HookDevice(*pDevice);
-
-            if (!State::Instance().creatingD3DDevice)
-            {
-                _PD = physicalDevice;
-                LOG_DEBUG("_PD captured: {0:X}", (UINT64) _PD);
-                _device = *pDevice;
-                LOG_DEBUG("_device captured: {0:X}", (UINT64) _device);
-                MenuOverlayVk::DeviceCreated(_device, &localCreateInfo);
-            }
+            _PD = physicalDevice;
+            LOG_DEBUG("_PD captured: {0:X}", (UINT64) _PD);
+            _device = *pDevice;
+            LOG_DEBUG("_device captured: {0:X}", (UINT64) _device);
+            HookDevice(_device);
+            MenuOverlayVk::DeviceCreated(_device, &localCreateInfo);
         }
 
         ScopedSkipSpoofingGlobal skipSpoofingGlobal {};

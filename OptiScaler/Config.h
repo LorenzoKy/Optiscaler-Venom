@@ -409,7 +409,6 @@ class Config
     CustomOptional<bool> FpsOverlayShowVram { false };
     CustomOptional<bool> FpsOverlayShowGpu { false };
     CustomOptional<bool> FpsOverlayShowCpu { false };
-    CustomOptional<bool> FpsOverlayShowRefreshRate { false };
     CustomOptional<bool> FpsOverlayShowRam { false };
     CustomOptional<bool> FpsOverlayShowGameRam { true };
     CustomOptional<bool> FpsOverlayShowCommitRam { false };
@@ -419,7 +418,12 @@ class Config
     CustomOptional<bool> FpsOverlayShowCpuHotspot { false };   // The CPU's hottest core or CCD on its row
     CustomOptional<bool> FpsOverlayShowClock { false };        // Date and time row
     CustomOptional<bool> FpsOverlayShowSessionTimer { false }; // Time since OptiScaler started, on the FPS row
-    CustomOptional<bool> FpsOverlayShowUpscalerName { true };  // Input -> upscaler and its version, on the FPS row
+    CustomOptional<bool> FpsOverlayShowUpscalerName { true };  // Input -> upscaler and its version, Upscale or FPS row
+    // A graph row also needs its switch, on any overlay type
+    CustomOptional<bool> FpsOverlayShowFrameTimeGraph { true };
+    CustomOptional<bool> FpsOverlayShowUpscalerTimeGraph { true };
+    CustomOptional<bool> FpsOverlayShowFGTimeGraph { true };
+    CustomOptional<bool> FpsOverlayShowLatencyGraph { false };
     CustomOptional<bool> FpsOverlayCompactLabels { false };
     // Rows of the Custom overlay type in their order, comma separated keys, hidden ones start with -.
     // No value means the default overlay type's rows
@@ -428,7 +432,7 @@ class Config
     CustomOptional<float, NoDefault> FpsOverlayRowSpacing; // No value means the default spacing
     // Milliseconds the values that change every frame are kept, 0 updates them every frame
     CustomOptional<float> FpsOverlayUpdateInterval { 0.0f };
-    CustomOptional<float> FpsOverlayAlpha { 0.45f };
+    CustomOptional<float> FpsOverlayAlpha { 0.4f };
     CustomOptional<float, NoDefault> FpsScale; // No value means same as MenuScale
     CustomOptional<float> FpsOverlayGraphHeight { 1.0f };
     // Position for FpsOverlayPos_Custom, 0.0 left/top to 1.0 right/bottom
@@ -442,14 +446,14 @@ class Config
     CustomOptional<float> FpsOverlayLabelScale { 1.0f };
     CustomOptional<float> FpsOverlayValueScale { 1.0f };
     // 0xRRGGBB, used when the overlays don't use the theme colors
-    CustomOptional<uint32_t> FpsOverlayLabelColor { 0xEAEAEA };
+    CustomOptional<uint32_t> FpsOverlayLabelColor { 0xD9D9D9 };
     CustomOptional<uint32_t> FpsOverlayValueColor { 0xFFFFFF };
     CustomOptional<uint32_t> FpsOverlayGraphColor { 0x00FF00 };
     CustomOptional<uint32_t> FpsOverlayBGColor { 0x000000 };
     CustomOptional<FpsOverlayShadow> FpsOverlayShadowType { FpsOverlayShadow_Shadow };
-    CustomOptional<float> FpsOverlayShadowStrength { 0.4f };
+    CustomOptional<float> FpsOverlayShadowStrength { 0.5f };
     CustomOptional<uint32_t> FpsOverlayShadowColor { 0x000000 };
-    CustomOptional<float> FpsOverlayRounding { 2.0f };
+    CustomOptional<float> FpsOverlayRounding { 4.0f };
     CustomOptional<float> MenuRounding { 2.0f };
     CustomOptional<bool> UseHQFont { true };
     CustomOptional<bool> DisableSplash { false };
