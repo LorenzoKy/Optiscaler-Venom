@@ -3176,7 +3176,7 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
                 if (!fgText.empty())
                     line.Label(" (" + fgText + ")");
 
-                if (!featureText.empty())
+                if (!featureText.empty() && config->FpsOverlayShowUpscalerName.value_or_default())
                     line.Label(" | " + featureText);
 
                 // How long OptiScaler has been running
@@ -3363,6 +3363,16 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
                 rows[OverlayRow_LowLatency] = OverlayLine();
                 rows[OverlayRow_LowLatency]->lowLatency = true;
             }
+            else if (rowShown[OverlayRow_LowLatency])
+            {
+                // The Reflex output has no timings yet, the others need the game's markers
+                rows[OverlayRow_LowLatency] =
+                    OverlayLine()
+                        .Label(L("Low Latency Timings: ", "LLT "))
+                        .Value("lowLatencyTimings", "N/A")
+                        .Label(InputCommon::active_output() == LowLatencyMode::Reflex ? " (not with Reflex output)"
+                                                                                      : " (no markers)");
+            }
 
             // Per real frame and per generated frame, only the D3D12 frame generation is timed
             if (interpolatedFrameCount != 0 && state.currentFG != nullptr)
@@ -3379,6 +3389,14 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
 
                 rows[OverlayRow_FGTime] = std::move(line);
                 rows[OverlayRow_FGTimeGraph] = graphRow("##FGTimeGraph", &gFGTimes, 20.0f);
+            }
+            else if (rowShown[OverlayRow_FGTime])
+            {
+                rows[OverlayRow_FGTime] = OverlayLine()
+                                              .Label(L("FG Time: ", "FGT "))
+                                              .Value("fgTime", "N/A")
+                                              .Label(generatedFrames != 0 ? " (not timed for this frame generation)"
+                                                                          : " (frame generation off)");
             }
 
             auto colorOf = [](float r, float g, float b)
@@ -4009,8 +4027,28 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
                 if (fg != nullptr)
                     localFrameCount = fg->FrameCount();
 
-                ImGui::Text("FGId: %llu, RfxId: %llu", localFrameCount, state.reflexFrameId);
-                ImGui::Text("Low latency timings, whole frame: %.1fms", rangeInNs / 1000.0);
+                // Text lines with the overlay's shadow or outline under them
+                auto shadowedText = [&](ImU32 color, const std::string& text)
+                {
+                    const char* begin = text.c_str();
+                    const char* end = begin + text.size();
+                    drawText(drawList, ImGui::GetFontSize(), ImGui::GetCursorScreenPos(), color, begin, end, true);
+
+                    ImGui::PushStyleColor(ImGuiCol_Text, color);
+                    ImGui::TextUnformatted(begin, end);
+                    ImGui::PopStyleColor();
+                };
+
+                // OverlayLine frameIds;
+                // frameIds.Label("FGId: ")
+                //     .Value("lowLatencyFgId", StrFmt("%llu", localFrameCount))
+                //     .Label(", RfxId: ")
+                //     .Value("lowLatencyRfxId", StrFmt("%llu", state.reflexFrameId));
+                // drawLine(frameIds);
+                OverlayLine wholeFrame;
+                wholeFrame.Label("Low latency timings, whole frame: ")
+                    .Value("lowLatencyFrame", StrFmt("%.1fms", rangeInNs / 1000.0));
+                drawLine(wholeFrame);
 
                 const auto maxWidth = horizontal ? fpsScale * 300.0f : plotSize.x;
 
@@ -4024,7 +4062,8 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
                     const auto& timing = timingOpt.value();
                     float duration = static_cast<float>(timing.length * rangeInNs / 1000.0);
 
-                    ImGui::TextColored(toneMappedColor, "%-12s %4.1fms", desc, duration);
+                    shadowedText(ImGui::ColorConvertFloat4ToU32(toneMappedColor),
+                                 StrFmt("%-12s %4.1fms", desc, duration));
 
                     auto leftLimit = ImGui::GetItemRectMin().x + offsetForText * fpsScale;
 
@@ -9011,6 +9050,9 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
 
             optionCheckbox("Session Timer", config->FpsOverlayShowSessionTimer,
                            "Adds how long OptiScaler has been running to the FPS row");
+
+            optionCheckbox("Upscaler Name", config->FpsOverlayShowUpscalerName,
+                           "Shows the input and the upscaler with its version on the FPS row");
 
             const char* latencyTypes[] = { "PC Latency (Experimental)", "Render Latency", "Both" };
             int latencyType = config->FpsOverlayLatencyType.value_or_default();

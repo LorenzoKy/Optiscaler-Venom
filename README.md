@@ -12,7 +12,7 @@
 <div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
-  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.2%20beta%202-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
+  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.2%20beta%203-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
   <a href="https://github.com/optiscaler/OptiScaler"><img src="https://img.shields.io/badge/Based%20on-OptiScaler-64748b?style=for-the-badge&logo=github" alt="Based on OptiScaler"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-64748b?style=for-the-badge" alt="GPL-3.0"></a>
 
@@ -63,7 +63,7 @@ There are two kinds of downloads:
 | Where | [**Latest release**](https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest) | [**Pre-releases**](https://github.com/LorenzoKy/Optiscaler-Venom/releases) named `OptiScaler Venom nightly YYYYMMDD` |
 
 > [!WARNING]
-> **Nightly builds are the way to always have OptiScaler's most recent changes, but nobody tests them.** They are built by a script every day from the [official nightly](https://github.com/optiscaler/OptiScaler-nightly/releases): if upstream breaks something, the nightly breaks too. Use them if you want the newest fixes and can live with bugs; otherwise stick to the stable releases. If a day's upstream changes conflict with the Venom ones, that day has no nightly.
+> **Nightly builds are the way to always have OptiScaler's most recent changes, but nobody tests them.** They are built by a script every day from the [official nightly](https://github.com/optiscaler/OptiScaler-nightly/releases): if upstream breaks something, the nightly breaks too. Use them if you want the newest fixes and can live with bugs; otherwise stick to the stable releases. If a day's upstream changes conflict with the Venom ones, that day has no nightly. Every release has that day's official nightly in it, and every nightly has the latest release: on a day a release comes out there's no separate nightly.
 
 Every nightly says exactly what it's made of: the upstream nightly and commit with their dates, and the Venom commit. The full list is in the [changelog](CHANGELOG-Opti-Venom.md#nightly-builds). Only the last 14 nightlies are kept.
 

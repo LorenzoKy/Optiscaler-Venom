@@ -513,6 +513,28 @@ using PFN_nvmlDeviceGetTemperature = int(__cdecl*)(nvmlDevice_t, int, unsigned i
 using PFN_nvmlDeviceGetPowerUsage = int(__cdecl*)(nvmlDevice_t, unsigned int*);
 using PFN_nvmlDeviceGetClockInfo = int(__cdecl*)(nvmlDevice_t, int, unsigned int*);
 
+struct nvmlUtilization_t
+{
+    unsigned int gpu; // Percent of the time a kernel ran
+    unsigned int memory;
+};
+
+using PFN_nvmlDeviceGetUtilizationRates = int(__cdecl*)(nvmlDevice_t, nvmlUtilization_t*);
+
+// NvAPI_GPU_GetDynamicPstatesInfoEx: the usage of the graphics, frame buffer, video and bus domains
+struct NvDynamicPstatesInfo
+{
+    NvU32 version;
+    NvU32 flags; // Bit 0: dynamic P-states on
+    struct
+    {
+        NvU32 isPresent : 1;
+        NvU32 percentage;
+    } utilization[8];
+};
+
+using PFN_NvAPI_GPU_GetDynamicPstatesInfoEx = NvAPI_Status(__cdecl*)(NvPhysicalGpuHandle, NvDynamicPstatesInfo*);
+
 struct NvGpuVoltageStatus
 {
     NvU32 version;
@@ -545,12 +567,14 @@ struct State
     PFN_nvmlDeviceGetTemperature getTemp = nullptr;
     PFN_nvmlDeviceGetPowerUsage getPower = nullptr;
     PFN_nvmlDeviceGetClockInfo getClock = nullptr;
+    PFN_nvmlDeviceGetUtilizationRates getUtilization = nullptr;
 
     NvPhysicalGpuHandle nvapiGpu = nullptr;
     decltype(&NvAPI_GPU_GetAllClockFrequencies) getAllClocks = nullptr;
     decltype(&NvAPI_GPU_GetThermalSettings) getThermal = nullptr;
     PFN_NvAPI_GPU_GetCurrentVoltage getCurrentVoltage = nullptr;
     PFN_NvAPI_GPU_ThermalGetSensors getThermalSensors = nullptr;
+    PFN_NvAPI_GPU_GetDynamicPstatesInfoEx getPstates = nullptr;
     NvU32 thermalSensorMask = 0; // The sensors the GPU has, found on the first query
 };
 
@@ -577,6 +601,8 @@ inline void Query(const GpuInformation& gpuInfo, GpuMetrics& out)
                 KernelBaseProxy::GetProcAddress_()(nvml, "nvmlDeviceGetPowerUsage"));
             s.getClock = reinterpret_cast<PFN_nvmlDeviceGetClockInfo>(
                 KernelBaseProxy::GetProcAddress_()(nvml, "nvmlDeviceGetClockInfo"));
+            s.getUtilization = reinterpret_cast<PFN_nvmlDeviceGetUtilizationRates>(
+                KernelBaseProxy::GetProcAddress_()(nvml, "nvmlDeviceGetUtilizationRates"));
 
             if (init != nullptr && getHandle != nullptr && init() == 0)
                 getHandle(0, &s.nvmlDevice);
@@ -633,6 +659,7 @@ inline void Query(const GpuInformation& gpuInfo, GpuMetrics& out)
                         reinterpret_cast<PFN_NvAPI_GPU_GetCurrentVoltage>(queryInterface(0x465F9BCFu));
                     s.getThermalSensors =
                         reinterpret_cast<PFN_NvAPI_GPU_ThermalGetSensors>(queryInterface(0x65FE3AADu));
+                    s.getPstates = reinterpret_cast<PFN_NvAPI_GPU_GetDynamicPstatesInfoEx>(queryInterface(0x60DED2EDu));
 
                     // A mask with a sensor the GPU doesn't have fails, so the sensors are asked one more at a time
                     if (s.getThermalSensors != nullptr && s.nvapiGpu != nullptr)
@@ -670,6 +697,12 @@ inline void Query(const GpuInformation& gpuInfo, GpuMetrics& out)
 
         if (s.getClock != nullptr && s.getClock(s.nvmlDevice, 2, &val) == 0 && val > 0)
             out.memClockMhz = val;
+
+        nvmlUtilization_t utilization {};
+        if (s.getUtilization != nullptr && s.getUtilization(s.nvmlDevice, &utilization) == 0 && utilization.gpu <= 100)
+        {
+            out.usagePercent = static_cast<double>(utilization.gpu);
+        }
     }
 
     if (s.nvapiGpu != nullptr)
@@ -715,6 +748,19 @@ inline void Query(const GpuInformation& gpuInfo, GpuMetrics& out)
                     out.hotspotC = hotspot;
                     LogSource("GPU hot spot", "NVAPI");
                 }
+            }
+        }
+
+        // The graphics domain, also what DXVK-NVAPI gives under Proton
+        if (!out.usagePercent.has_value() && s.getPstates != nullptr)
+        {
+            NvDynamicPstatesInfo pstates {};
+            pstates.version = sizeof(NvDynamicPstatesInfo) | (1u << 16);
+
+            if (s.getPstates(s.nvapiGpu, &pstates) == NVAPI_OK && pstates.utilization[0].isPresent &&
+                pstates.utilization[0].percentage <= 100)
+            {
+                out.usagePercent = static_cast<double>(pstates.utilization[0].percentage);
             }
         }
 
@@ -1482,6 +1528,10 @@ inline void QueryGpu(const GpuInformation& gpuInfo, GpuMetrics& out)
         if (auto hz = ReadNumber(device.path + L"freq2_input"); !out.memClockMhz.has_value() && hz && *hz > 0.0)
             out.memClockMhz = static_cast<uint32_t>(std::lround(*hz / 1'000'000.0));
 
+        // Percent, in the PCI device's folder
+        if (auto busy = ReadNumber(device.path + L"device\\gpu_busy_percent"); busy && *busy >= 0.0 && *busy <= 100.0)
+            out.usagePercent = *busy;
+
         if (out.tempC.has_value())
             LogSource("GPU temperature", "hwmon amdgpu");
 
@@ -1811,7 +1861,11 @@ inline GpuMetrics PollGpu(const GpuInformation& gpuInfo)
         SharedSensors::QueryAfterburner(&out, nullptr);
     }
 
-    out.usagePercent = PdhGpu::QueryUsagePercent(gpuInfo.luid);
+    // Task Manager's busiest engine, else the driver's (Wine has no GPU Engine counters)
+    if (auto usage = PdhGpu::QueryUsagePercent(gpuInfo.luid); usage.has_value())
+        out.usagePercent = usage;
+    else if (out.usagePercent.has_value())
+        LogSource("GPU usage", gpuInfo.vendorId == VendorId::Nvidia ? "NVML / NVAPI" : "hwmon amdgpu");
 
     return out;
 }

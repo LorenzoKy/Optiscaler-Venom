@@ -8,13 +8,34 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream `master` | |
 | --- | --- | --- | --- |
-| [v0.2 beta 2](#v02-beta-2) | 2026-10-25 | [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) | Latest |
+| [v0.2 beta 3](#v02-beta-3) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | Latest |
+| [v0.2 beta 2](#v02-beta-2) | 2026-10-25 | [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) | |
 | [v0.2 beta 1](#v02-beta-1) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | Pre-release |
 | [v0.1](#v01) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | |
 
 Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.2 beta 3
+
+> **Built on OptiScaler `10.0.0.1`** (development build, after stable `v0.9.4`), upstream `master` at [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396), 2026-10-25: everything in the official nightly [nightly-20261025](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261025) plus the 4 upstream commits after it.
+
+### New
+- **Upscaler Name** option in **Row Options** (`FpsOverlayShowUpscalerName`, on by default): turn it off to hide the `DLSS -> DLSS 310.x` label on the FPS row ([#2](https://github.com/LorenzoKy/Optiscaler-Venom/issues/2)).
+- From upstream: XeFG Dynamic MFG skips isolated hitches and keeps its count while the game is in the background; XeFG leaves the swapchain to the game's own FSR Frame Generation; AntiLag 2 frame types for XeFG presents; fix for a crash in Path of Exile 2 when switching V-Sync on Vulkan; the DLSSG input's hooks resolve `slSetFeatureLoaded`.
+
+### Changed
+- From upstream: overlay defaults a bit lighter (labels `0xEAEAEA`, background alpha 0.45, shadow 0.4, corners 2), the Low Latency Timings row with the overlay's shadow or outline.
+
+### Fixed
+- **GPU usage** missing on Linux (Proton/Wine) ([#2](https://github.com/LorenzoKy/Optiscaler-Venom/issues/2)): Wine has no GPU Engine counters, so the usage now comes from NVML or NVAPI (also through DXVK-NVAPI) on NVIDIA and from `amdgpu` on AMD. Windows still uses Task Manager's counters first.
+- **Low Latency Timings** and **Frame Generation Time** rows no longer stay empty: they show `N/A` and why (no timings with the Reflex output, no markers, frame generation off or not timed).
+
+### Known limits
+- The Low Latency Timings row has no data with the Reflex output (upstream limit).
+- Frame Generation Time only measures OptiScaler's D3D12 frame generation.
+- On a single-CCD Ryzen (e.g. 7600) CPU Hotspot is the same as the CPU temperature: Tctl and the only CCD read the same.
 
 ## v0.2 beta 2
 
