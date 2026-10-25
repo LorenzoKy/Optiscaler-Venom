@@ -17,6 +17,15 @@
 - Low Latency Timings have no data with the Reflex output, Frame Generation Time only measures OptiScaler's D3D12 frame generation.
 - On a single-CCD Ryzen CPU Hotspot equals the CPU temperature: Tctl and the only CCD read the same.
 
+### 🛟 Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| Upscaler Name option, GPU usage on Linux, `N/A` rows for Low Latency Timings and Frame Generation Time | **Venom** | [`opti-venom-v0.2-beta3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta3) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG Dynamic MFG fixes, FSR FG swapchain, AntiLag 2 frame types, Path of Exile 2 V-Sync crash fix, DLSSG hooks, lighter overlay defaults, and everything else | **Upstream** | `master` [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
+
 Full list in [CHANGELOG-Opti-Venom.md](https://github.com/LorenzoKy/Optiscaler-Venom/blob/opti-venom-v0.2-beta3/CHANGELOG-Opti-Venom.md).
 
 ### 📦 Install

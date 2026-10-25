@@ -20,6 +20,15 @@
 ### ⚠️ Notes
 - On Windows the CPU temperature needs HWiNFO (with **Shared Memory Support** on), MSI Afterburner (CPU temperature in its monitoring list), Core Temp or AMD Adrenalin running.
 
+### 🛟 Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| GPU and CPU hotspot, temperatures on Linux, CPU temperature with NVIDIA / Intel GPUs, HWiNFO GPU pick, Frame Generation Time Graph row, import of beta 1 settings codes | **Venom** | [`opti-venom-v0.2-beta2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta2) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| Custom overlay type, overlay types, presets and defaults, overlay customization (started in Venom: [PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238), merged), and everything else | **Upstream** | `master` [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
+
 Full list in [CHANGELOG-Opti-Venom.md](https://github.com/LorenzoKy/Optiscaler-Venom/blob/opti-venom-v0.2-beta2/CHANGELOG-Opti-Venom.md).
 
 ### 📦 Install

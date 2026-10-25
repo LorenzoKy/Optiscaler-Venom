@@ -6,13 +6,15 @@
 
 What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.com/optiscaler/OptiScaler), release by release. Upstream's own changes are in [Changelog.md](Changelog.md) and the [OptiScaler releases](https://github.com/optiscaler/OptiScaler/releases). Dates are UTC.
 
-| Release | Date | Built on upstream `master` | |
-| --- | --- | --- | --- |
-| [v0.2 beta 4](#v02-beta-4) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | Latest |
-| [v0.2 beta 3](#v02-beta-3) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | |
-| [v0.2 beta 2](#v02-beta-2) | 2026-10-25 | [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) | |
-| [v0.2 beta 1](#v02-beta-1) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | Pre-release |
-| [v0.1](#v01) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | |
+**Problems and who to ask.** Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with a Venom build, and contact [@LorenzoKy](https://github.com/LorenzoKy) only about code that comes from me (**Venom**). Code that comes from upstream OptiScaler is the [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues)'s, and third-party code (today dashdogy's) is its author's. Each release below ends with a **Who to ask** table: what it changed, whose code it is and the git tag or commit to look at. The full table of features is in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Release | Git tag | Date | Built on upstream `master` | |
+| --- | --- | --- | --- | --- |
+| [v0.2 beta 4](#v02-beta-4) | [`opti-venom-v0.2-beta4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | Latest |
+| [v0.2 beta 3](#v02-beta-3) | [`opti-venom-v0.2-beta3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta3) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | |
+| [v0.2 beta 2](#v02-beta-2) | [`opti-venom-v0.2-beta2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta2) | 2026-10-25 | [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) | |
+| [v0.2 beta 1](#v02-beta-1) | [`opti-venom-v0.2-beta1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta1) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | Pre-release |
+| [v0.1](#v01) | [`opti-venom-v0.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.1) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | |
 
 Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-builds).
 
@@ -34,6 +36,16 @@ Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-b
 - XeFG on Vulkan is new and **not tested in game** in Venom: if a Vulkan game breaks with it, set `[XeFG] Vulkan=false`.
 - On some drivers the shared textures may show artifacts in generated frames, resizing the window while XeFG runs may fail, and presents wait for the D3D12 swapchain on the render thread (a bit more latency than XeFG in D3D12 games).
 
+### Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| XeFG in Vulkan games, and the D3D12 menu / FPS overlay present fix from dashdogy's build | **dashdogy** | [`opti-venom-v0.2-beta4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4), [optiscaler/OptiScaler#1240](https://github.com/optiscaler/OptiScaler/pull/1240) (not merged upstream), commits with `Venom-Part: dashdogy` | [dashdogy](https://github.com/dashdogy) on the PR |
+| `[XeFG] Vulkan` switch, Vulkan presents that always return the image to the game | **Venom** | [`opti-venom-v0.2-beta4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| Everything else: upscalers, frame generation, the rest of the overlay | **Upstream** | `master` [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
+
 ## v0.2 beta 3
 
 > **Built on OptiScaler `10.0.0.1`** (development build, after stable `v0.9.4`), upstream `master` at [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396), 2026-10-25: everything in the official nightly [nightly-20261025](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261025) plus the 4 upstream commits after it.
@@ -53,6 +65,15 @@ Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-b
 - The Low Latency Timings row has no data with the Reflex output (upstream limit).
 - Frame Generation Time only measures OptiScaler's D3D12 frame generation.
 - On a single-CCD Ryzen (e.g. 7600) CPU Hotspot is the same as the CPU temperature: Tctl and the only CCD read the same.
+
+### Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| Upscaler Name option, GPU usage on Linux, `N/A` rows for Low Latency Timings and Frame Generation Time | **Venom** | [`opti-venom-v0.2-beta3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta3) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG Dynamic MFG fixes, FSR FG swapchain, AntiLag 2 frame types, Path of Exile 2 V-Sync crash fix, DLSSG hooks, lighter overlay defaults, and everything else | **Upstream** | `master` [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.2 beta 2
 
@@ -83,6 +104,15 @@ Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-b
 - On Windows the CPU temperature needs one of these running: HWiNFO with **Shared Memory Support** on (the free version turns it off after 12 hours), MSI Afterburner with the CPU temperature in its monitoring list, Core Temp, or AMD Adrenalin (AMD GPUs).
 - No NVIDIA hot spot on RTX 50 GPUs and on Linux: the driver doesn't report it there.
 
+### Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| GPU and CPU hotspot, temperatures on Linux, CPU temperature with NVIDIA / Intel GPUs, HWiNFO GPU pick, Frame Generation Time Graph row, import of beta 1 settings codes | **Venom** | [`opti-venom-v0.2-beta2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta2) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| Custom overlay type, overlay types, presets and defaults, overlay customization (started in Venom: [PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238), merged), and everything else | **Upstream** | `master` [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
+
 ## v0.2 beta 1
 
 > **Built on OptiScaler `10.0.0.1`** (development build, after stable `v0.9.4`), upstream `master` at [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855), 2026-10-24, same as v0.1. Pre-release.
@@ -100,6 +130,15 @@ Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-b
 ### Known limits
 - Only tested on Marvel's Spider-Man 2 with XeFG and FSR 4. FSR FG and DLSSG timing untested; Vulkan frame generation isn't timed.
 - Frame generation work that runs next to the game's on another queue counts in full in the FG time.
+
+### Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| Frame Generation Time row, Extra dlls folder, session timer on the FPS row, overlay resizing fix | **Venom** | [`opti-venom-v0.2-beta1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta1) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| Everything else | **Upstream** | `master` [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.1
 
@@ -136,13 +175,22 @@ First release: upstream OptiScaler plus a reworked FPS overlay. With default set
 - Hardware telemetry depends on what the GPU driver and the system expose: some values may be missing on some setups. CPU temperature and power may need HWiNFO, Afterburner or Core Temp running.
 - An in-game FPS cap that doesn't go through Reflex, XeLL or AntiLag 2 shows as CPU Bound.
 
+### Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| Overlay metrics (lows, PC and render latency, bottleneck, refresh rate, VRAM / GPU / CPU / RAM, date and time, upscale ratio details, upscaler FPS cost) and the customization | **Venom** | [`opti-venom-v0.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.1) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| Everything else; the customization was merged upstream later ([PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238)) and is theirs from [`opti-venom-v0.2-beta2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta2) | **Upstream** | `master` [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
+
 ---
 
 ## Nightly builds
 
 Automatic and **not tested**: the official OptiScaler nightly of the day plus the Venom changes (see the [README](README.md#-nightly-builds-always-up-to-date-not-tested)). Newest first; each line is added by the build itself.
 
-Each build's page lists the OptiScaler changes since the previous nightly and the Venom changes in it. Only the last 14 nightlies stay downloadable.
+Each build's page lists the OptiScaler changes since the previous nightly and the Venom changes in it. Problems with a nightly go to the [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) as with any release: I only handle the Venom changes in it, the rest is upstream's (see [Who to ask](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask)). Only the last 14 nightlies stay downloadable.
 
 | Date | Build | OptiScaler | Venom | Changes |
 | --- | --- | --- | --- | --- |

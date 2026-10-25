@@ -16,6 +16,15 @@
 - Tested on Marvel's Spider-Man 2 (RDNA 4, XeFG, FSR 4). FSR FG and DLSSG timing weren't tested. Vulkan frame generation isn't timed.
 - Frame generation work running in parallel with the game on another queue counts in full, so the FG time can read a bit high.
 
+### 🛟 Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| Frame Generation Time row, Extra dlls folder, session timer on the FPS row, overlay resizing fix | **Venom** | [`opti-venom-v0.2-beta1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta1) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| Everything else | **Upstream** | `master` [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
+
 Full list in [CHANGELOG-Opti-Venom.md](https://github.com/LorenzoKy/Optiscaler-Venom/blob/opti-venom-v0.2-beta1/CHANGELOG-Opti-Venom.md).
 
 ### 📦 Install

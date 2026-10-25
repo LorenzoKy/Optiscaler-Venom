@@ -11,8 +11,18 @@
 - XeFG on Vulkan drops a frame it can't present instead of ending in a device lost.
 
 ### ⚠️ Notes
-- XeFG on Vulkan is brand new: if a Vulkan game breaks with it, set `[XeFG] Vulkan=false` and tell me which game in the [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues).
+- XeFG on Vulkan is brand new: if a Vulkan game breaks with it, set `[XeFG] Vulkan=false` and tell DASHDOGY, NOT ME.
 - Some drivers may show artifacts in generated frames on Vulkan, and resizing the window while XeFG runs may fail.
+
+### 🛟 Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| XeFG in Vulkan games, and the D3D12 menu / FPS overlay present fix from dashdogy's build | **dashdogy** | [`opti-venom-v0.2-beta4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4), [optiscaler/OptiScaler#1240](https://github.com/optiscaler/OptiScaler/pull/1240) (not merged upstream), commits with `Venom-Part: dashdogy` | [dashdogy](https://github.com/dashdogy) on the PR |
+| `[XeFG] Vulkan` switch, Vulkan presents that always return the image to the game | **Venom** | [`opti-venom-v0.2-beta4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| Everything else: upscalers, frame generation, the rest of the overlay | **Upstream** | `master` [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 Full list in [CHANGELOG-Opti-Venom.md](https://github.com/LorenzoKy/Optiscaler-Venom/blob/opti-venom-v0.2-beta4/CHANGELOG-Opti-Venom.md).
 

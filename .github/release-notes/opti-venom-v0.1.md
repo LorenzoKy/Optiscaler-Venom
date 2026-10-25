@@ -10,6 +10,15 @@
 - **Presets**: Opti-Like, Afterburner-Like, Latency Lab. **Share Settings** as a copy/paste code.
 - Default settings look exactly like upstream's overlay.
 
+### 🛟 Who to ask
+
+Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) for any problem with this build. I only handle what is mine (**Venom**): upstream and third-party code is supported by its authors, so ask them as the table says. More in the [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-who-to-ask).
+
+| Change | From | Git tag / ref | Ask |
+| --- | --- | --- | --- |
+| Overlay metrics (lows, PC and render latency, bottleneck, refresh rate, VRAM / GPU / CPU / RAM, date and time, upscale ratio details, upscaler FPS cost) and the customization | **Venom** | [`opti-venom-v0.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.1) | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| Everything else; the customization was merged upstream later ([PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238)) and is theirs from [`opti-venom-v0.2-beta2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta2) | **Upstream** | `master` [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
+
 Full list in [CHANGELOG-Opti-Venom.md](https://github.com/LorenzoKy/Optiscaler-Venom/blob/opti-venom-v0.1/CHANGELOG-Opti-Venom.md).
 
 ### 📦 Install

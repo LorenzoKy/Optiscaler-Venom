@@ -328,7 +328,11 @@ jobs:
           echo
           echo "Extract \`$name.7z\` into the game's folder, as any OptiScaler build. To check the download: \`sha256sum -c $name.7z.sha256\`."
           echo
-          echo "<sub>Every nightly is in the [changelog]($repo/blob/main/CHANGELOG-Opti-Venom.md#nightly-builds), dates are UTC. Problems with this build go [here]($repo/issues), not to the OptiScaler team.</sub>"
+          echo "### 🛟 Who to ask"
+          echo
+          echo "Open an [issue here]($repo/issues) for any problem with this build. I only handle what is mine (**Venom**): the Venom changes listed above. Everything else is upstream OptiScaler's: check it with the official nightly and report it to the [OptiScaler team](https://github.com/$UPSTREAM/issues). Third-party code in a build (marked \`Venom-Part\`) goes to its author. More in the [README]($repo/blob/main/README.md#-who-to-ask)."
+          echo
+          echo "<sub>Every nightly is in the [changelog]($repo/blob/main/CHANGELOG-Opti-Venom.md#nightly-builds), dates are UTC.</sub>"
         } > notes.md
         gh release delete "$OURS" -R "$GITHUB_REPOSITORY" --cleanup-tag -y 2>/dev/null || true
         gh release create "$OURS" "$name.7z" "$name.7z.sha256" -R "$GITHUB_REPOSITORY" \
