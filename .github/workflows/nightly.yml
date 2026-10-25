@@ -4,11 +4,14 @@
 # Every day: takes the latest official OptiScaler nightly, applies the Opti-Venom
 # patches (branch opti-venom of LorenzoKy/OptiScaler) on the same upstream commit,
 # builds it and publishes a pre-release. On a conflict it skips the build and opens an issue.
+# Checks at 09, 10, 11, 12 and 13 Italian time: it stops as soon as today's nightly is built (later checks
+# find it released and do nothing) and the 13:00 check fails, so GitHub sends a mail, if it is still missing.
 name: Nightly
 
 on:
   schedule:
-    - cron: "0 10,12 * * *"   # UTC (no DST). Upstream nightlies come out 08:00-11:50 UTC: 10:00 takes the usual ones, 12:00 the late ones (already released = skipped)
+    # Hourly UTC slots; the "Check window" step lets only 09:00-13:59 Italian time through (5 checks, DST included)
+    - cron: "0 7-12 * * *"
   workflow_dispatch:
     inputs:
       nightly_tag:
@@ -47,12 +50,34 @@ jobs:
       with:
         path: venom
 
+    - name: Check window
+      id: window
+      shell: pwsh
+      run: |
+        $h = 12
+        if ('${{ github.event_name }}' -eq 'schedule') {
+          $tz = [TimeZoneInfo]::FindSystemTimeZoneById('W. Europe Standard Time')
+          $h = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz).Hour
+        }
+        $run = ('${{ github.event_name }}' -ne 'schedule') -or ($h -ge 9 -and $h -le 13)
+        "run=$($run.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "last=$(($h -eq 13).ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "Italian hour $h, run=$run"
+
     - name: Find upstream nightly
       id: find
+      if: steps.window.outputs.run == 'true'
       run: |
         tag="${{ inputs.nightly_tag }}"
         [ -z "$tag" ] && tag=$(gh release list -R "$NIGHTLY_REPO" -L 1 --json tagName --jq '.[0].tagName')
         [ -z "$tag" ] && { echo "::error::No upstream nightly found"; exit 1; }
+        if [ "${{ github.event_name }}" = "schedule" ] && [ "${tag#nightly-}" != "$(date -u +%Y%m%d)" ]; then
+          if [ "${{ steps.window.outputs.last }}" = "true" ]; then
+            echo "::error::Last check (13:00 Italian time): today's upstream nightly is still missing (latest: $tag)"; exit 1
+          fi
+          echo "Today's upstream nightly is not out yet (latest: $tag), the next check will look again"
+          echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+        fi
         json=$(gh release view "$tag" -R "$NIGHTLY_REPO" --json body,createdAt,url)
         # The nightly notes list the commits of the last 24 hours, newest first
         sha=$(echo "$json" | jq -r .body | grep -oE "github.com/$UPSTREAM/commit/[0-9a-f]{40}" | head -1 | grep -oE '[0-9a-f]{40}$' || true)
