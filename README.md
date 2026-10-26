@@ -40,7 +40,7 @@
 
 ## 🎬 Overview
 
-The FPS OSD rework of OptiScaler 10 started here and is mine ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
+The FPS OSD rework of OptiScaler 10 started here and is created by me ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
 
 Venom OSD Options:
 
