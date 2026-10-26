@@ -37,7 +37,7 @@
 >
 > **Want to help?** Ideas and contributions are welcome: open an issue or a pull request. I'll take in the ones I like and that fit the project. Indie devs, including those who work with AI, with good ideas can also reach me in the [Opti Venom thread](https://discord.com/channels/995299945492008990/1563930670018076843) on Discord.
 >
-> **Vibe coded.** Venom is a vibe coded project. And tokens are expensive, very expensive: keep that in mind before asking for "just one more feature" 🙂
+> **Vibe coded.** Venom is a vibe coded project. And tokens are expensive: keep that in mind before asking for "just one more feature" 🙂
 
 ## 🎬 Overview
 
