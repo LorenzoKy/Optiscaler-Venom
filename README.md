@@ -40,7 +40,7 @@
 
 ## 🎬 Overview
 
-The FPS OSD rework of OptiScaler 10 started here and is created by me ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
+The FPS OSD rework of OptiScaler v10 started here and is created by me ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
 
 Venom OSD Options:
 
@@ -194,7 +194,7 @@ The **[Opti Venom thread](https://discord.com/channels/995299945492008990/156393
 ## 🙏 Credits
 
 - **[OptiScaler](https://github.com/optiscaler/OptiScaler)** and its team and contributors (cdozdil, FakeMichau, TheRazerMD and everyone else): this build is entirely based on their work. If you like it, [support OptiScaler](https://github.com/sponsors/cdozdil?frequency=one-time).
-- **[LorenzoKy](https://github.com/LorenzoKy)**: the Venom features and builds, and the FPS OSD rework of OptiScaler 10 ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
+- **[LorenzoKy](https://github.com/LorenzoKy)**: the Venom features and builds, and the FPS OSD rework of OptiScaler v10 ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
 - **[dashdogy](https://github.com/dashdogy)**: XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240)).
 - The third-party libraries and SDKs OptiScaler uses, listed in the [original README](README-OptiScaler.md).
 
