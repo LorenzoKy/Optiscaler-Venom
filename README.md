@@ -21,8 +21,7 @@
 
 <br />
 
-**OptiScaler Venom** (by LorenzoKy) is a community build of [OptiScaler](https://github.com/optiscaler/OptiScaler) that follows the latest upstream development and adds features that are unlikely to be seen in the regular OptiScaler: a much richer FPS overlay (OSD), frame generation timing, extra FSR dlls and more.
-
+**OptiScaler Venom** (by LorenzoKy) is a community build of [OptiScaler](https://github.com/optiscaler/OptiScaler) that follows the latest upstream development and adds features that regular OptiScaler doesn't have (some of them may get there later, as the OSD rework did): more FPS overlay (OSD) rows and graphs, frame generation timing, extra FSR dlls and more.
 <div align="center">
 
 **🧭 Jump to:** [🎬 Overview](#-overview) · [📦 Install](#-installation) · [🧪 How to use the Venom features](#-how-to-use-the-venom-features) · [📂 Extra dlls](#-extra-dlls-more-fsr-versions) · [📊 OSD](#-fps-overlay-osd) · [📏 Metrics explained](#-how-every-metric-works) · [✨ What's different](#-whats-different) · [🛟 Who to ask](#-who-to-ask) · [🌙 Nightly](#-nightly-builds-always-up-to-date-not-tested) · [💬 Discord](#-discord) · [📜 Changelog](CHANGELOG-Opti-Venom.md)
@@ -40,6 +39,8 @@
 > **Vibe coded.** Venom is a vibe coded project. And tokens are expensive: keep that in mind before asking for "just one more feature" 🙂
 
 ## 🎬 Overview
+
+The FPS OSD rework of OptiScaler 10 started here and is mine ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
 
 Venom OSD Options:
 
@@ -81,7 +82,7 @@ Menu → **FPS Overlay**:
   - **FPS & Upscale**: 1% and 0.1% lows, FPS cost of upscaler and frame generation, session timer, **Upscale Inputs** (`DLSS -> FSR 4.0.3`: on the Upscale Ratio row when that row is on, otherwise on the FPS row like upstream).
   - **Hardware**: model names, CPU & GPU usage, GPU and CPU hotspot, game RAM, commit charge.
   - **Graphs**: one switch per graph. Each graph shows under its row while that row is on: frame time, upscaler time (on by default, like OptiScaler), FG time and **PC latency** (off by default, the last 18 seconds). They are not rows of their own any more.
-- **Latency Type**: PC latency (experimental, close to FrameView / PresentMon), render latency or both. Needs a game with Reflex, XeLL or AntiLag 2.
+- **Latency Type**: PC latency (experimental, meant to match FrameView / PresentMon's, usually within a few ms), render latency or both. Needs a game with Reflex, XeLL or AntiLag 2.
 - **Appearance**: presets (*Default*, *Classic*, *Afterburner-Like*, *Glass Strip*), font, size, colors, shadow or outline, background, corners, position.
 - **Share Settings**: **Copy Code** puts your whole OSD in the clipboard, **Paste Code** applies someone else's. Share yours in the [Discord thread](#-discord).
 
@@ -126,7 +127,7 @@ The `| Reflex` / `| XeLL` / `| AntiLag 2` after the value is the low latency met
 ### 🔍 Upscaler and frame generation
 
 - **Upscale ratio**: render resolution → output resolution, updated in real time, so dynamic resolution shows.
-- **Upscaler time**: the GPU time of the upscaler, measured with GPU timestamps around its dispatch.
+- **Upscaler time**: the upscaler's GPU time, as OptiScaler measures it (upstream's row).
 - **Frame generation time** (D3D12, FSR FG / XeFG / DLSSG): GPU timestamps around everything the frame generation library submits (interpolation, the swapchain's copies and composition), per real and per generated frame. Work running on another queue next to the game's counts in full, so it can be higher than what it really costs in FPS.
 - **FPS cost**: how many output FPS you'd gain without the upscaler's or the frame generation's GPU time. It assumes the GPU is the limit: when you're CPU bound the real cost is lower.
 
@@ -138,7 +139,7 @@ What limits the frame rate: **GPU Bound**, **CPU Bound**, **FPS Limit** or **Ref
 
 - **VRAM**: the game's video memory use, the budget Windows gives it and the memory clock, from DXGI / the driver.
 - **GPU**: temperature, power, voltage and core clock from the GPU's driver; **hotspot** is the hottest sensor (AMD junction, NVIDIA hot spot; RTX 50 GPUs don't report it, then HWiNFO or Afterburner are used).
-- **CPU**: temperature, power, voltage and clock. Windows doesn't give CPU temperatures to apps, so they come from **HWiNFO** (with Shared Memory Support on), **MSI Afterburner**, **Core Temp** or **AMD Adrenalin** running in the background; on Linux (Proton/Wine) from the kernel's hwmon sensors. Nothing running = no temperature. **Hotspot** is the hottest core or CCD.
+- **CPU**: temperature, power, voltage and clock. Windows doesn't give CPU temperatures to apps, so they come from **HWiNFO** (with Shared Memory Support on), **MSI Afterburner**, **Core Temp** or **AMD Adrenalin** running in the background; on Linux (Proton/Wine) from the kernel's hwmon sensors. Nothing running = no temperature (the clock still shows, from Windows' counters). Power and voltage come from the same apps. **Hotspot** is the hottest core or CCD.
 - **Usage %**: GPU and CPU usage as Task Manager shows it.
 - **RAM**: system RAM in use, plus the game's own working set and, if on, the commit charge (RAM + pagefile).
 - **Date and time**: in your Windows format.
@@ -167,7 +168,7 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 
 ## 🛟 Who to ask
 
-- **Venom**: my code. Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) or write to [@LorenzoKy](https://github.com/LorenzoKy): the only code I support.
+- **Venom**: my code. Open an [issue here](https://github.com/LorenzoKy/Optiscaler-Venom/issues) or write to [@LorenzoKy](https://github.com/LorenzoKy): the only code I look after (with the limits of the passion project note at the top).
 - **Upstream**: the [OptiScaler team](https://github.com/optiscaler/OptiScaler)'s code, also when it started in Venom. If it happens with the official [nightly](https://github.com/optiscaler/OptiScaler/releases/tag/nightly) too, report it in [their issues](https://github.com/optiscaler/OptiScaler/issues).
 - **Third parties** (today dashdogy): separate commits that keep their authorship and carry a `Venom-Part: <name>` line in the [`opti-venom`](https://github.com/LorenzoKy/OptiScaler/tree/opti-venom) branch, so they can always be removed. Ask their author.
 
@@ -178,7 +179,7 @@ Issues about upstream or third-party code may be closed with a pointer to the ri
 | | Stable releases | Nightly builds |
 | --- | --- | --- |
 | What | Checked by me before publishing | The **official OptiScaler nightly of the day** + Venom, built automatically |
-| Tested in game | ✅ | ❌ **Not tested** |
+| Tested in game | ✅ (in the games I have, not every game) | ❌ **Not tested** |
 | Where | [**Latest release**](https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest) | [**Pre-releases**](https://github.com/LorenzoKy/Optiscaler-Venom/releases) named `OptiScaler Venom nightly YYYYMMDD` |
 
 > [!WARNING]
@@ -193,7 +194,7 @@ The **[Opti Venom thread](https://discord.com/channels/995299945492008990/156393
 ## 🙏 Credits
 
 - **[OptiScaler](https://github.com/optiscaler/OptiScaler)** and its team and contributors (cdozdil, FakeMichau, TheRazerMD and everyone else): this build is entirely based on their work. If you like it, [support OptiScaler](https://github.com/sponsors/cdozdil?frequency=one-time).
-- **[LorenzoKy](https://github.com/LorenzoKy)**: the Venom features and builds.
+- **[LorenzoKy](https://github.com/LorenzoKy)**: the Venom features and builds, and the FPS OSD rework of OptiScaler 10 ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
 - **[dashdogy](https://github.com/dashdogy)**: XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240)).
 - The third-party libraries and SDKs OptiScaler uses, listed in the [original README](README-OptiScaler.md).
 
