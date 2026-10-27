@@ -161,4 +161,5 @@ Each build's page lists the OptiScaler changes since the previous nightly and th
 | Date | Build | OptiScaler | Venom | Changes |
 | --- | --- | --- | --- | --- |
 <!-- nightly-rows -->
+| 2026-10-27 | [**nightly 20261027**](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-nightly-20261027) | [`b19cfd29`](https://github.com/optiscaler/OptiScaler/commit/b19cfd29134ab9bc75d654b90f55fb05faca91b2) · [nightly-20261027](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261027) | [`4df0b9e6`](https://github.com/LorenzoKy/OptiScaler/commit/4df0b9e655fbd72af1a8c43f3dcd8baa30feb68b) | 12 OptiScaler · 8 Venom |
 | 2026-10-24 | [**nightly 20261024**](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-nightly-20261024) | [`fd3a45a6`](https://github.com/optiscaler/OptiScaler/commit/fd3a45a6cac6d610a35c570479f80dae95ca4eac) · [nightly-20261024](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261024) | [`8037f10a`](https://github.com/LorenzoKy/OptiScaler/commit/8037f10a7a5ce960493e6174902dfb85b5b2ea16) | 5 Venom |
