@@ -4,7 +4,8 @@
 # after theirs (betas opti-venom-vX.Y-betaN, the stable opti-venom-vX.Y.0). "Check order" refuses anything else,
 # see .github/scripts/check-release-order.sh and nightly.yml.
 # RULE: before a release, rebase the Venom patches on the latest official upstream nightly and write their commit in
-# .github/venom-patch: the "Check sources" step refuses anything else.
+# .github/venom-patch: the "Check sources" step refuses anything else. The rebase takes in the conflicts solved in
+# .github/rerere for the nightlies (git rerere replays them while rebasing): empty that folder with the release.
 name: Build and release
 
 on:

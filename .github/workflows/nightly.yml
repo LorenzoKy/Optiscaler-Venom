@@ -6,6 +6,10 @@
 # Every day: takes the latest official OptiScaler nightly, applies the Opti-Venom
 # patches (branch opti-venom of LorenzoKy/OptiScaler) on the same upstream commit,
 # builds it and publishes a pre-release. On a conflict it skips the build and opens an issue.
+# Conflicts: solve them once on the repo with git rerere on and add the resolution to .github/rerere
+# (Tools\dev\export-rerere-cache.ps1), don't rebase opti-venom between releases: the nightlies replay the
+# resolution. Every hourly run also tries the patches on upstream master's tip ("Look ahead"), so a conflict that
+# the next upstream nightly will bring opens an issue hours before it, while there's time to record its resolution.
 # GitHub starts scheduled runs late, often by hours (upstream's 04:00 UTC nightly comes out around 09:00 UTC),
 # so a quick check runs every hour and the build starts at the first check that finds today's upstream nightly
 # not built yet. If it is still missing at 20:00 Italian time the check fails, so GitHub sends a mail.
@@ -112,6 +116,60 @@ jobs:
         } >> "$GITHUB_OUTPUT"
         echo "Upstream nightly $tag (run started ${started:-unknown}) = $UPSTREAM@$sha"
 
+  # The patches on upstream master's tip, what the next upstream nightly will build: a conflict there gets an issue
+  # before the nightly comes, one that is gone closes it
+  ahead:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github
+        path: venom
+
+    - name: Look ahead
+      run: |
+        git config --global user.name "LorenzoKy"
+        git config --global user.email "136495843+LorenzoKy@users.noreply.github.com"
+        git clone -q --filter=blob:none "https://github.com/$UPSTREAM.git" src
+        cd src
+        master=$(git rev-parse HEAD)
+        git fetch -q "https://github.com/$PATCH_REPO.git" "$PATCH_BRANCH:venom-patch"
+        base=$(git merge-base venom-patch "$master")
+        rc=0
+        bash ../venom/.github/scripts/apply-venom-patches.sh "$base..venom-patch" ../venom/.github/rerere .. || rc=$?
+        [ -s ../resolved.txt ] && { echo "Solved from .github/rerere:"; cat ../resolved.txt; }
+        cd ..
+        open=$(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict-ahead --state open --json number --jq '.[0].number')
+        if [ "$rc" = 0 ]; then
+          echo "The patches apply on master $master"
+          [ -n "$open" ] && gh issue close "$open" -R "$GITHUB_REPOSITORY" \
+            --comment "Gone: the patches apply on master [\`${master:0:8}\`](https://github.com/$UPSTREAM/commit/$master)."
+          exit 0
+        fi
+        [ "$rc" = 2 ] || { cat pick.log; exit 1; }
+        {
+          echo "The Venom patches conflict with upstream \`master\`: the next upstream nightly will skip the Venom nightly unless the resolution is in \`.github/rerere\` by then."
+          echo
+          echo "- Upstream: \`master\` at [\`${master:0:8}\`](https://github.com/$UPSTREAM/commit/$master), $(cd src && git log -1 --format=%cd --date=format-local:'%Y-%m-%d %H:%M' "$master") UTC"
+          echo "- Patches: \`$PATCH_REPO@$PATCH_BRANCH\` (\`$(cd src && git rev-parse --short=8 venom-patch)\`)"
+          echo "- Stopped at: \`$(cat stopped.txt 2>/dev/null)\`"
+          echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          echo
+          echo "Conflicting files:"
+          sed 's/^/- `/; s/$/`/' conflicts.txt
+          echo
+          echo "Solve it once with \`git rerere\` on (cherry-pick \`$PATCH_BRANCH\` on this \`master\`), add the resolution to \`.github/rerere\` with \`Tools\\dev\\export-rerere-cache.ps1\` and push it: \`$PATCH_BRANCH\` stays as it is. The next hourly check closes this issue."
+        } > issue.md
+        cat pick.log
+        if [ -n "$open" ]; then
+          gh issue edit "$open" -R "$GITHUB_REPOSITORY" --body-file issue.md
+        else
+          gh label create nightly-conflict-ahead -R "$GITHUB_REPOSITORY" --color D97706 --description "The next nightly will conflict" 2>/dev/null || true
+          gh issue create -R "$GITHUB_REPOSITORY" --title "Upcoming conflict: Opti-Venom patches and upstream master" \
+            --label nightly-conflict-ahead --body-file issue.md
+        fi
+        echo "::warning::The patches conflict with upstream master ${master:0:8}"
+
   nightly:
     needs: check
     if: needs.check.outputs.build == 'true'
@@ -171,13 +229,16 @@ jobs:
           echo "patch_date=$(git log -1 --format=%cd --date=format-local:%Y-%m-%d venom-patch)"
           echo "upstream_date=$(git log -1 --format=%cd --date=format-local:%Y-%m-%d HEAD)"
         } >> "$GITHUB_OUTPUT"
-        if ! git cherry-pick "$base..venom-patch" > ../pick.log 2>&1; then
-          git diff --name-only --diff-filter=U > ../conflicts.txt
-          git cherry-pick --abort || true
+        # Conflicts solved once before come back solved from .github/rerere
+        bash ../venom/.github/scripts/apply-venom-patches.sh "$base..venom-patch" ../venom/.github/rerere ..
+        rc=$?
+        [ -s ../resolved.txt ] && { echo "Solved from .github/rerere:"; cat ../resolved.txt; }
+        if [ "$rc" = 2 ]; then
           echo "conflict=true" >> "$GITHUB_OUTPUT"
           cat ../pick.log
           exit 0
         fi
+        [ "$rc" = 0 ] || { cat ../pick.log; exit 1; }
         echo "conflict=false" >> "$GITHUB_OUTPUT"
         git submodule update --init --recursive -q
 
@@ -195,7 +256,9 @@ jobs:
           echo "Conflicting files:"
           sed 's/^/- `/; s/$/`/' conflicts.txt
           echo
-          echo "Rebase \`$PATCH_BRANCH\` on the new upstream master and push it: the next run picks it up."
+          echo "Stopped at: \`$(cat stopped.txt 2>/dev/null)\`"
+          echo
+          echo "Solve it once with \`git rerere\` on (cherry-pick \`$PATCH_BRANCH\` on \`$SHA\`), add the resolution to \`.github/rerere\` with \`Tools\\dev\\export-rerere-cache.ps1\` and push it, then run the workflow again: \`$PATCH_BRANCH\` stays as it is."
         } > issue.md
         open=$(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict --state open --json number --jq '.[0].number')
         if [ -n "$open" ]; then

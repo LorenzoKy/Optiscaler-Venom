@@ -1,3 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 *.sh eol=lf
+# git rerere resolutions for the nightly: kept byte for byte, line endings are part of their hash
+.github/rerere/** -text -diff
