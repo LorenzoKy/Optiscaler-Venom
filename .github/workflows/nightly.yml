@@ -6,7 +6,8 @@
 # Every day: takes the latest official OptiScaler nightly, applies the Opti-Venom
 # patches (branch opti-venom of LorenzoKy/OptiScaler) on the same upstream commit,
 # builds it and publishes a pre-release. On a conflict it skips the build and opens an issue.
-# Conflicts: solve them once on the repo with git rerere on and add the resolution to .github/rerere
+# Conflicts where a side only added lines are solved automatically (.github/scripts/auto-resolve.py).
+# The others: solve them once on the repo with git rerere on and add the resolution to .github/rerere
 # (Tools\dev\export-rerere-cache.ps1), don't rebase opti-venom between releases: the nightlies replay the
 # resolution. Every hourly run also tries the patches on upstream master's tip ("Look ahead"), so a conflict that
 # the next upstream nightly will bring opens an issue hours before it, while there's time to record its resolution.
@@ -137,7 +138,7 @@ jobs:
         base=$(git merge-base venom-patch "$master")
         rc=0
         bash ../venom/.github/scripts/apply-venom-patches.sh "$base..venom-patch" ../venom/.github/rerere .. || rc=$?
-        [ -s ../resolved.txt ] && { echo "Solved from .github/rerere:"; cat ../resolved.txt; }
+        [ -s ../resolved.txt ] && { echo "Solved from .github/rerere or automatically:"; cat ../resolved.txt; }
         cd ..
         open=$(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict-ahead --state open --json number --jq '.[0].number')
         if [ "$rc" = 0 ]; then
@@ -159,6 +160,15 @@ jobs:
           sed 's/^/- `/; s/$/`/' conflicts.txt
           echo
           echo "Solve it once with \`git rerere\` on (cherry-pick \`$PATCH_BRANCH\` on this \`master\`), add the resolution to \`.github/rerere\` with \`Tools\\dev\\export-rerere-cache.ps1\` and push it: \`$PATCH_BRANCH\` stays as it is. The next hourly check closes this issue."
+          if [ -s conflicts.diff ]; then
+            echo
+            echo "<details><summary>What is left to solve</summary>"
+            echo
+            echo '```diff'
+            head -c 45000 conflicts.diff
+            echo '```'
+            echo "</details>"
+          fi
         } > issue.md
         cat pick.log
         if [ -n "$open" ]; then
@@ -232,7 +242,7 @@ jobs:
         # Conflicts solved once before come back solved from .github/rerere
         bash ../venom/.github/scripts/apply-venom-patches.sh "$base..venom-patch" ../venom/.github/rerere ..
         rc=$?
-        [ -s ../resolved.txt ] && { echo "Solved from .github/rerere:"; cat ../resolved.txt; }
+        [ -s ../resolved.txt ] && { echo "Solved from .github/rerere or automatically:"; cat ../resolved.txt; }
         if [ "$rc" = 2 ]; then
           echo "conflict=true" >> "$GITHUB_OUTPUT"
           cat ../pick.log
@@ -259,6 +269,15 @@ jobs:
           echo "Stopped at: \`$(cat stopped.txt 2>/dev/null)\`"
           echo
           echo "Solve it once with \`git rerere\` on (cherry-pick \`$PATCH_BRANCH\` on \`$SHA\`), add the resolution to \`.github/rerere\` with \`Tools\\dev\\export-rerere-cache.ps1\` and push it, then run the workflow again: \`$PATCH_BRANCH\` stays as it is."
+          if [ -s conflicts.diff ]; then
+            echo
+            echo "<details><summary>What is left to solve</summary>"
+            echo
+            echo '```diff'
+            head -c 45000 conflicts.diff
+            echo '```'
+            echo "</details>"
+          fi
         } > issue.md
         open=$(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict --state open --json number --jq '.[0].number')
         if [ -n "$open" ]; then
