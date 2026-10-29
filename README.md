@@ -21,10 +21,10 @@
 
 <br />
 
-**OptiScaler Venom** (by LorenzoKy) is a community build of [OptiScaler](https://github.com/optiscaler/OptiScaler) that follows the latest upstream development and adds features that regular OptiScaler doesn't have (some of them may get there later, as the OSD rework did): more FPS overlay (OSD) rows and graphs, frame generation timing, extra FSR dlls and more.
+**OptiScaler Venom** (by LorenzoKy) is a community build of [OptiScaler](https://github.com/optiscaler/OptiScaler) that follows the latest upstream development and adds features that regular OptiScaler doesn't have (some of them may get there later, as the OSD rework did): more FPS overlay (OSD) rows and graphs, frame generation timing and more.
 <div align="center">
 
-**🧭 Jump to:** [🎬 Overview](#-overview) · [📦 Install](#-installation) · [🧪 How to use the Venom features](#-how-to-use-the-venom-features) · [📂 Extra dlls](#-extra-dlls-more-fsr-versions) · [📊 OSD](#-fps-overlay-osd) · [📏 Metrics explained](#-how-every-metric-works) · [✨ What's different](#-whats-different) · [🛟 Who to ask](#-who-to-ask) · [🌙 Nightly](#-nightly-builds-always-up-to-date-not-tested) · [💬 Discord](#-discord) · [📜 Changelog](CHANGELOG-Opti-Venom.md)
+**🧭 Jump to:** [🎬 Overview](#-overview) · [📦 Install](#-installation) · [🧪 How to use the Venom features](#-how-to-use-the-venom-features) · [📂 More FSR versions](#-more-fsr-versions-upstreams-custom-upscalers) · [📊 OSD](#-fps-overlay-osd) · [📏 Metrics explained](#-how-every-metric-works) · [✨ What's different](#-whats-different) · [🛟 Who to ask](#-who-to-ask) · [🌙 Nightly](#-nightly-builds-always-up-to-date-not-tested) · [💬 Discord](#-discord) · [📜 Changelog](CHANGELOG-Opti-Venom.md)
 
 </div>
 
@@ -56,22 +56,24 @@ https://github.com/user-attachments/assets/191a3007-0457-4b5d-a357-0ee303b0d583
 
 Everything is in the OptiScaler menu (`Insert` by default). With default settings Venom looks and behaves like upstream OptiScaler: nothing changes until you turn it on.
 
-### 📂 Extra dlls: more FSR versions
+### 📂 More FSR versions: upstream's custom upscalers
 
-Use any FSR upscaler dll you want (for example FSR 4.0.3 next to the 4.1.x the game or the driver gives you), without replacing any file. DX12 only.
+> [!NOTE]
+> **Venom's Extra dlls are gone** since the nightly of 2026-10-29: upstream OptiScaler now loads more upscaler dlls by itself (custom upscalers), on DX12 and Vulkan, so Venom uses that. Releases up to v0.2 still have the `Extra dlls` folder. Copies of AMD's driver dll (`amdxcffx64.dll`) aren't loaded from a folder any more.
 
-1. Open the game's folder, where `OptiScaler.dll` (renamed, e.g. `dxgi.dll`) is. Next to it there's the **`OptiScaler`** folder: create a folder called **`Extra dlls`** inside it.
+Use any FSR (or DLSS) upscaler dll you want, for example FSR 4.0.3 next to the 4.1.x the game or the driver gives you, without replacing any file:
+
+1. In the game's folder, inside the **`OptiScaler`** folder next to `OptiScaler.dll` (renamed, e.g. `dxgi.dll`), create a **`custom`** folder with one folder per upscaler. Its name is the name you'll see in the menu.
+2. Put the dll in the subfolder for its kind:
    ```
-   <game folder>\OptiScaler\Extra dlls\
+   <game folder>\OptiScaler\custom\FSR 4.0.3\ffx\amd_fidelityfx_upscaler_dx12.dll      (DX12 FFX)
+   <game folder>\OptiScaler\custom\FSR 4.0.3\ffx_vk\amd_fidelityfx_upscaler_vk.dll    (Vulkan FFX)
+   <game folder>\OptiScaler\custom\My DLSS\dlss\nvngx.dll                             (NGX runtime for DLSS)
    ```
-2. Put the dlls in it, directly or in subfolders. A subfolder per version is the easiest way to keep several:
-   ```
-   <game folder>\OptiScaler\Extra dlls\4.0.3\amd_fidelityfx_upscaler_dx12.dll
-   <game folder>\OptiScaler\Extra dlls\4.1.2\amd_fidelityfx_upscaler_dx12.dll
-   ```
-   Accepted files: `amd_fidelityfx_upscaler_dx12.dll` (FFX SDK upscaler), `amd_fidelityfx_dx12.dll` (FFX loader), `amdxcffx64.dll` (a copy of AMD's driver dll). Rename nothing.
-3. Start the game, open the menu, choose an FSR upscaler (FSR 3.1 / 4) and pick the version from the **FFX Upscaler** list: the extra ones are at the end, named after their subfolder (for example `FSR 4.0.3 (4.0.3)`), or `(Extra)` when the dll is directly in `Extra dlls`.
-4. Not in the list? A version the default dlls already have isn't listed twice, and `OptiScaler.log` says which dlls were loaded or skipped (search for `Extra`).
+   The dll can have any name; with more dlls in the folder the standard name is used.
+3. Start the game, open the menu and pick it in the upscaler list: each folder is its own entry.
+
+Moving from `Extra dlls`: `Extra dlls\4.0.3\amd_fidelityfx_upscaler_dx12.dll` becomes `custom\4.0.3\ffx\amd_fidelityfx_upscaler_dx12.dll`.
 
 ### 📊 FPS overlay (OSD)
 
@@ -151,12 +153,13 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 | Feature | Since | From |
 | --- | --- | --- |
 | Lows (1% / 0.1%), PC and render latency, bottleneck, VRAM / GPU / CPU / RAM, usage %, date, time and session timer, FSR 4 model / DLSS preset, FPS cost | [v0.1][v0.1] | **Venom** |
-| Frame generation GPU time, Extra dlls | [v0.2 beta 1][b1] | **Venom** |
+| Frame generation GPU time (Extra dlls until v0.2, replaced by upstream's custom upscalers) | [v0.2 beta 1][b1] | **Venom** |
 | GPU / CPU hotspot, temperatures and GPU usage on Linux | [v0.2 beta 2][b2], [beta 3][b3] | **Venom** |
 | `[XeFG] Vulkan` switch and safer Vulkan presents | [v0.2 beta 4][b4] | **Venom** |
 | OSD Options columns, graph switches, PC latency graph, Upscale Inputs on the Upscale row | [v0.2][v0.2] | **Venom** |
 | XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240), commits marked `Venom-Part: dashdogy`) | [v0.2 beta 4][b4] | **dashdogy** |
 | OSD customization (fonts, colors, presets, settings codes), Custom overlay type, upscale ratio row | upstream `master`, started in Venom ([PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238)) | **Upstream** |
+| Custom upscalers (`OptiScaler\custom` folder), in place of Venom's Extra dlls | nightly 2026-10-29 | **Upstream** |
 | Upscalers, frame generation, spoofing, everything else | the official nightly each release is built on ([changelog](CHANGELOG-Opti-Venom.md)) | **Upstream** |
 
 [v0.1]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.1

@@ -120,7 +120,7 @@ Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-b
 
 ### New
 - **Frame Generation Time** row (`FpsOverlayShowFGTime`, D3D12): GPU time of FSR FG, XeFG or DLSSG per real and generated frame.
-- **Extra dlls** folder (`OptiScaler\Extra dlls`, subfolders allowed): more FSR upscaler dlls in the FFX Upscaler list. How to: [README](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-extra-dlls-more-fsr-versions).
+- **Extra dlls** folder (`OptiScaler\Extra dlls`, subfolders allowed): more FSR upscaler dlls in the FFX Upscaler list. How to: [README of v0.2](https://github.com/LorenzoKy/Optiscaler-Venom/blob/opti-venom-v0.2/README.md#-extra-dlls-more-fsr-versions). Removed from the nightly of 2026-10-29 on, replaced by upstream's [custom upscalers](https://github.com/LorenzoKy/Optiscaler-Venom/blob/main/README.md#-more-fsr-versions-upstreams-custom-upscalers).
 
 ### Changed / Fixed
 - Session timer moved to the FPS row. The OSD no longer resizes when a value changes length ([#1](https://github.com/LorenzoKy/Optiscaler-Venom/issues/1)).
