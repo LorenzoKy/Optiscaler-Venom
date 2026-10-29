@@ -240,8 +240,9 @@ jobs:
           echo "upstream_date=$(git log -1 --format=%cd --date=format-local:%Y-%m-%d HEAD)"
         } >> "$GITHUB_OUTPUT"
         # Conflicts solved once before come back solved from .github/rerere
-        bash ../venom/.github/scripts/apply-venom-patches.sh "$base..venom-patch" ../venom/.github/rerere ..
-        rc=$?
+        # The step's shell stops at the first error (bash -e): exit 2 has to reach the conflict report
+        rc=0
+        bash ../venom/.github/scripts/apply-venom-patches.sh "$base..venom-patch" ../venom/.github/rerere .. || rc=$?
         [ -s ../resolved.txt ] && { echo "Solved from .github/rerere or automatically:"; cat ../resolved.txt; }
         if [ "$rc" = 2 ]; then
           echo "conflict=true" >> "$GITHUB_OUTPUT"
