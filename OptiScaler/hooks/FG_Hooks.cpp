@@ -20,6 +20,7 @@
 #include <gpu_time/FGGpuTime_Dx12.h>
 #include <low_latency/input/input_common.h>
 #include <menu/menu_overlay_dx.h>
+#include <imgui/ImGuiNotify.hpp>
 
 #include <d3d12.h>
 #include <detours/detours.h>

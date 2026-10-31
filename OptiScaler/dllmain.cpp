@@ -1147,6 +1147,22 @@ static void CheckWorkingMode()
         FfxApiProxy::InitFfxVk(ffxVkModule);
     }
 
+    HMODULE ffxVkSRModule = nullptr;
+    ffxVkSRModule = GetDllNameWModule(&ffxVkUpscalerNamesW);
+    if (ffxVkSRModule != nullptr)
+    {
+        LOG_DEBUG("amd_fidelityfx_upscaler_vk.dll already in memory");
+        FfxApiProxy::InitFfxVk_SR(ffxVkSRModule);
+    }
+
+    HMODULE ffxVkFGModule = nullptr;
+    ffxVkFGModule = GetDllNameWModule(&ffxVkFGNamesW);
+    if (ffxVkFGModule != nullptr)
+    {
+        LOG_DEBUG("amd_fidelityfx_framegeneration_vk.dll already in memory");
+        FfxApiProxy::InitFfxVk_FG(ffxVkFGModule);
+    }
+
     // Hook kernel32 methods
     if (!Config::Instance()->EarlyHooking.value_or_default())
     {
@@ -1280,6 +1296,12 @@ static void printQuirks(flag_set<GameQuirk>& quirks)
 
     if (quirks & GameQuirk::DLSSGFrameLatencyWaitable)
         stringQuirks.push_back("Request frame latency waitable swapchain for DLSSG");
+
+    if (quirks & GameQuirk::HideFsr4)
+        stringQuirks.push_back("Hide FSR 4 from the game's FFX version list");
+
+    if (quirks & GameQuirk::ExtendedSearch)
+        stringQuirks.push_back("Extended DLL search");
 
     state->detectedQuirks.append_range(stringQuirks);
     for (auto& stringQuirk : stringQuirks)
@@ -1597,6 +1619,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         spdlog::info("");
         spdlog::info("LogLevel: {}", Config::Instance()->LogLevel.value_or_default());
 
+        CustomProviders::ResolveDx12Upscaler();
+        CustomProviders::ResolveVulkanUpscaler();
+        CustomProviders::ResolveFGNvngx();
+
         spdlog::info("");
         if (Util::GetRealWindowsVersion(winVer))
             spdlog::info("Windows version: {} ({}.{}.{})", Util::GetWindowsName(winVer), winVer.dwMajorVersion,
@@ -1625,6 +1651,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         State::Instance().activeFgInput = Config::Instance()->FGInput.value_or_default();
         State::Instance().activeFgOutput = Config::Instance()->FGOutput.value_or_default();
         State::Instance().activeFgNvngx = Config::Instance()->FGNvngxReplacement.value_or_default();
+        State::Instance().activeFgNvngxCustom = State::Instance().fgNvngxCustom;
 
         // Ensure valid FG configuration
         if (State::Instance().activeFgOutput == FGOutput::NoFG && State::Instance().activeFgInput != FGInput::NoFG &&

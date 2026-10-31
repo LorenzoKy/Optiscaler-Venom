@@ -1,0 +1,2 @@
+# git rerere resolutions for the nightly: kept byte for byte, line endings are part of their hash
+rerere/** -text -diff

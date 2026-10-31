@@ -119,14 +119,29 @@ BOOL CALLBACK PatchGetModuleHandleW(PVOID pContext, DWORD nOrdinal, LPCSTR pszFu
 
 } // namespace
 
-FSR4DriverDll::FSR4DriverDll(const wchar_t* name, std::vector<std::wstring> sdkModules)
-    : _name(name), _sdkModules(std::move(sdkModules))
+void AddDriverToVersionList(std::vector<uint64_t>& ids, std::vector<const char*>& names, uint64_t driverId,
+                            const char* driverName, DriverListing listing)
 {
-    DriverDlls().push_back(this);
+    // FFX SDK modules can get the driver provider on their own
+    if (std::ranges::find(ids, driverId) != ids.end())
+        return;
+
+    auto driverVersion = ProviderVersion(driverId);
+    auto isOlder = [driverVersion](uint64_t id) { return ProviderVersion(id) < driverVersion; };
+
+    if (listing == DriverListing::WhenNewestUpscaler && !std::ranges::all_of(ids, isOlder))
+    {
+        LOG_DEBUG("Not listing driver provider {}, the FFX SDK has a newer or equal one", driverName);
+        return;
+    }
+
+    auto index = std::distance(ids.begin(), std::ranges::find_if(ids, isOlder));
+    ids.insert(ids.begin() + index, driverId);
+    names.insert(names.begin() + index, driverName);
 }
 
-FSR4DriverDll::FSR4DriverDll(const wchar_t* name, std::vector<std::wstring> sdkModules, std::filesystem::path path)
-    : _name(name), _sdkModules(std::move(sdkModules)), _path(std::move(path))
+FSR4DriverDll::FSR4DriverDll(const wchar_t* name, std::vector<std::wstring> sdkModules)
+    : _name(name), _sdkModules(std::move(sdkModules))
 {
     DriverDlls().push_back(this);
 }
@@ -136,12 +151,7 @@ HMODULE FSR4DriverDll::Load()
     std::call_once(_loadOnce,
                    [this]
                    {
-                       auto module = _path.empty() ? LoadDriverDll(_name.c_str())
-                                                   : NtdllProxy::LoadLibraryExW_Ldr(_path.c_str(), NULL, 0);
-
-                       if (!_path.empty())
-                           LOG_INFO(L"{} from {}: {:X}", _name, _path.wstring(), (size_t) module);
-
+                       auto module = LoadDriverDll(_name.c_str());
                        if (module == nullptr)
                            return;
 

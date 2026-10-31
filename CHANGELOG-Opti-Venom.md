@@ -10,7 +10,8 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream | |
 | --- | --- | --- | --- |
-| [**v0.2**](#v02) · [`opti-venom-v0.2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2) | 2026-10-25 | [nightly-20261025](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261025) = [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) | Latest |
+| [**v0.2.1**](#v021) · [`opti-venom-v0.2.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2.1) | 2026-10-31 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) | Latest |
+| [v0.2](#v02) · [`opti-venom-v0.2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2) | 2026-10-25 | [nightly-20261025](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261025) = [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) |  |
 | [v0.2 beta 4](#v02-beta-4) · [`opti-venom-v0.2-beta4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | |
 | [v0.2 beta 3](#v02-beta-3) · [`opti-venom-v0.2-beta3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta3) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | |
 | [v0.2 beta 2](#v02-beta-2) · [`opti-venom-v0.2-beta2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta2) | 2026-10-25 | [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) | |
@@ -20,6 +21,31 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.2.1
+
+> OptiScaler `10.0.0.1` (development build after `v0.9.4`), built on the latest official nightly [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = upstream `master` [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947). v0.2 plus everything upstream added since 2026-10-25.
+
+### Changed
+- **Extra dlls removed**: upstream OptiScaler now loads custom upscaler dlls on DX12 and Vulkan (and custom DLSS-G dlls) by itself, so Venom's own folder is gone. Copies of AMD's driver dll (`amdxcffx64.dll`) aren't loaded from a folder any more.
+- The upstream commits after nightly-20261031 are not in v0.2.1: they come back with the next official nightly. Venom nightlies have them.
+
+### From upstream (nightly-20261031)
+- Custom upscaler dlls (DX12, FFX Vulkan) and custom DLSS-G dlls, FidelityFX SDK 2.4, XeSS `MaxResponsiveMaskValue`.
+- XeFG fixes for Dynamic MFG, the game's FSR FG and AntiLag 2; Path of Exile 2 V-Sync crash on Vulkan; NvngxFFX on Vulkan.
+- OSD: Strip preset, Hide Averages, reworked frame time reporting.
+- Game fixes: Phantom Blade Zero, BeamNG (FSR 4 hidden).
+
+### Upgrading
+- Nothing to do: ini files and settings codes keep working. If you used `OptiScaler/Extra dlls`, switch to upstream's custom upscalers (see the [README](README.md)).
+
+### Who to ask
+
+| Change | From | Ask |
+| --- | --- | --- |
+| Extra dlls removed | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG in Vulkan games | **dashdogy** | [dashdogy](https://github.com/dashdogy) on [PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240) |
+| Everything else | **Upstream** nightly-20261031 `e7e3872d` | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.2
 

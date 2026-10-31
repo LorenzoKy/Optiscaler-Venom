@@ -65,6 +65,23 @@ typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateFfxApiProvider)(void* pData, uint32
 typedef HRESULT(STDMETHODCALLTYPE* PFN_UpdateFfxApiProviderEx)(void* pData, uint32_t dataSizeInBytes,
                                                                ProviderOption* options);
 
+// When the driver upscaler gets added to the upscaler versions of the FFX SDK
+enum class DriverListing
+{
+    Always,             // Opti's menu
+    WhenNewestUpscaler, // Version queries of the game
+};
+
+// FFX packs provider versions into the low bits of their ids, external providers also set bit 31
+inline feature_version ProviderVersion(uint64_t versionId)
+{
+    auto packed = static_cast<uint32_t>(versionId) & 0x7FFFFFFF;
+    return feature_version(packed >> 22, (packed >> 12) & 0x3FF, packed & 0xFFF);
+}
+// Adds a driver provider to a version list from the FFX SDK, keeping it sorted newest first
+void AddDriverToVersionList(std::vector<uint64_t>& ids, std::vector<const char*>& names, uint64_t driverId,
+                            const char* driverName, DriverListing listing);
+
 // A provider of a driver dll, with its own copy of the name as the driver formats names into buffers that later calls
 // overwrite
 struct DriverProvider
@@ -83,9 +100,6 @@ class FSR4DriverDll
     // also derives the SDK version from the file version of the first one it checks, so Load() has it check itself
     // first, before any FFX dll of the game
     FSR4DriverDll(const wchar_t* name, std::vector<std::wstring> sdkModules);
-
-    // A copy at that path only, like the ones in the Extra dlls folder
-    FSR4DriverDll(const wchar_t* name, std::vector<std::wstring> sdkModules, std::filesystem::path path);
 
     FSR4DriverDll(const FSR4DriverDll&) = delete;
     FSR4DriverDll& operator=(const FSR4DriverDll&) = delete;
@@ -109,7 +123,6 @@ class FSR4DriverDll
   private:
     std::wstring _name;
     std::vector<std::wstring> _sdkModules;
-    std::filesystem::path _path;
 
     HMODULE _module = nullptr;
     PFN_UpdateFfxApiProvider _updateFfxApiProvider = nullptr;

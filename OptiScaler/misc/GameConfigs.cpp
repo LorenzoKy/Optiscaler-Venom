@@ -141,6 +141,7 @@ const std::vector<GameConfig> gameConfigs = {
     {
         .exes = { "beamng.drive.x64.exe" },
         .defaults = { DxgiSpoofing = false },
+        .quirks = { HideFsr4 },
     },
 
     // Red Dead Redemption 2
@@ -668,6 +669,13 @@ const std::vector<GameConfig> gameConfigs = {
     {
         .exes = { "controlresonant.exe" },
         .defaults = { DxgiSpoofing = false, FGPreserveSwapChain = false, SimulateWaitableObject = true },
+    },
+
+    // Phantom Blade Zero
+    // Extended Search for locating plugin binaries
+    {
+        .exes = { "pbz.exe" },
+        .quirks = { ExtendedSearch },
     },
 
     // SL spoof enough to unlock everything DLSS/No spoof needed for DLSS inputs
