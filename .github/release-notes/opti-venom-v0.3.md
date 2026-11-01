@@ -7,7 +7,7 @@ HDR done right for the menu and the OSD, two plug and play Venom OSD presets and
 ### ✨ What's new
 - **HDR menu and OSD (D3D12).** In games with HDR10 or scRGB output the OptiScaler menu and the OSD no longer look washed out: they're drawn as in SDR and converted to the game's HDR format (203 nits white), with the same colors and transparency as in SDR. Automatic, nothing to set.
 - **More accurate frame generation time with XeFG.** XeFG's GPU time is now taken closer to its own work (recent `libxess_fg`), so in theory it's more accurate. Other frame generations are timed as before.
-- **Venom presets, plug and play.** In Appearance → Presets: **Venom** shows every Venom metric (FPS with lows, upscaler, PC and render latency, FG time, bottleneck, VRAM, GPU, CPU and RAM with usage and hotspots), **Venom Compact** puts FPS, PC latency, FG time, bottleneck, GPU and CPU on one line at the top center. One click and you're set.
+- **Venom presets, plug and play.** In Appearance → Presets: **Venom** shows every Venom metric (FPS with lows, upscaler, PC and render latency, FG time, bottleneck, VRAM, GPU, CPU and RAM with usage and hotspots), **Venom Style** shows the same metrics with a modern look of its own (Segoe UI Semibold, venom green labels, soft shadow, dark rounded panel). One click and you're set.
 
 ### ⚠️ Changed
 - **CPU temperature and power** ([#6](https://github.com/LorenzoKy/Optiscaler-Venom/issues/6)): Windows doesn't give them to apps without a kernel driver, so they still need **HWiNFO** (Shared Memory Support on), **MSI Afterburner** (CPU sensors monitored, RTSS not needed), **Core Temp** or **AMD Adrenalin** running. The CPU row tooltip, the ini and the README now say so. GPU sensors work on their own.

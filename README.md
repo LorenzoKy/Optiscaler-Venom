@@ -88,7 +88,7 @@ Menu → **FPS Overlay**:
   - **Hardware**: model names, CPU & GPU usage, GPU and CPU hotspot, game RAM, commit charge.
   - **Graphs**: one switch per graph. Each graph shows under its row while that row is on: frame time, upscaler time (on by default, like OptiScaler), FG time and **PC latency** (off by default, the last 18 seconds). They are not rows of their own any more.
 - **Latency Type**: PC latency (experimental, meant to match FrameView / PresentMon's, usually within a few ms), render latency or both. Needs a game with Reflex, XeLL or AntiLag 2.
-- **Appearance**: presets (*Default*, *Classic*, *Afterburner-Like*, *Strip*, plus Venom's plug and play *Venom* and *Venom Compact* with the extra metrics already on), font, size, colors, shadow or outline, background, corners, position.
+- **Appearance**: presets (*Default*, *Classic*, *Afterburner-Like*, *Strip*, plus Venom's plug and play *Venom* (every Venom metric) and *Venom Style* (the same metrics with Venom's own font, colors, shadow and panel)), font, size, colors, shadow or outline, background, corners, position.
 - **Share Settings**: **Copy Code** puts your whole OSD in the clipboard, **Paste Code** applies someone else's. Share yours in the [Discord thread](#-discord).
 
 Every option is also an `FpsOverlay*` key in `OptiScaler.ini`, each one documented there.
@@ -164,7 +164,7 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 | GPU / CPU hotspot, temperatures and GPU usage on Linux | [v0.2 beta 2][b2], [beta 3][b3] | **Venom** |
 | `[XeFG] Vulkan` switch and safer Vulkan presents | [v0.2 beta 4][b4] | **Venom** |
 | OSD Options columns, graph switches, PC latency graph, Upscale Inputs on the Upscale row | [v0.2][v0.2] | **Venom** |
-| HDR menu and OSD on D3D12, more accurate XeFG time, Venom and Venom Compact OSD presets | [v0.3][v0.3] | **Venom** |
+| HDR menu and OSD on D3D12, more accurate XeFG time, Venom and Venom Style OSD presets | [v0.3][v0.3] | **Venom** |
 | XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240), commits marked `Venom-Part: dashdogy`) | [v0.2 beta 4][b4] | **dashdogy** |
 | OSD customization (fonts, colors, presets, settings codes), Custom overlay type, upscale ratio row | upstream `master`, started in Venom ([PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238)) | **Upstream** |
 | Custom upscalers (`OptiScaler\custom` folder), in place of Venom's Extra dlls | nightly 2026-10-29 | **Upstream** |

@@ -9386,12 +9386,15 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                   "Type=7;Rows=fps,upscale,frametime,upscaler,latency,fgtime,bottleneck,vram,gpu,cpu,ram;"
                   "FpsRow=2;ShowLows=true;ShowUsage=true;ShowGpuHotspot=true;ShowCpuHotspot=true;"
                   "ShowFGTimeGraph=true;LatencyType=2;UpdateInterval=250;Alpha=0.5;Rounding=6" },
-                { "Venom Compact",
-                  "The main Venom metrics on one line at the top center:\n"
-                  "FPS, PC latency, FG time, bottleneck, GPU and CPU",
-                  "Pos=4;Type=7;Horizontal=true;Rows=fps,latency,fgtime,bottleneck,gpu,cpu;FpsRow=1;"
-                  "CompactLabels=true;HideAverages=true;ShowUsage=true;ShowFrameTimeGraph=false;"
-                  "ShowUpscalerTimeGraph=false;ShowFGTimeGraph=false;UpdateInterval=250;Alpha=0.4;Rounding=8" },
+                { "Venom Style",
+                  "Every Venom metric with Venom's own look: Segoe UI Semibold,\n"
+                  "venom green labels, soft shadow, dark rounded panel",
+                  "Type=7;Rows=fps,upscale,frametime,upscaler,latency,fgtime,bottleneck,vram,gpu,cpu,ram;"
+                  "FpsRow=2;ShowLows=true;ShowUsage=true;ShowGpuHotspot=true;ShowCpuHotspot=true;"
+                  "ShowFGTimeGraph=true;LatencyType=2;UpdateInterval=250;Font=seguisb.ttf;FontSize=15;"
+                  "LetterSpacing=0.2;LabelScale=0.85;ValueScale=1.05;LabelColor=0x8CE65A;ValueColor=0xF2F5F7;"
+                  "GraphColor=0x5CFF9D;BGColor=0x0B0E12;Alpha=0.6;Shadow=1;ShadowStrength=0.6;"
+                  "ShadowColor=0x000000;Rounding=12" },
             };
 
             // Four buttons per line
