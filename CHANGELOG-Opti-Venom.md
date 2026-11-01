@@ -29,10 +29,10 @@ Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-b
 
 ### New
 - **HDR menu and OSD** (D3D12): with HDR10 or scRGB output the OptiScaler menu and the OSD are drawn as in SDR and then converted to the game's HDR format (203 nits white), blended over the game like in SDR. Before they looked washed out. Automatic, no setting.
+- **Venom presets** (Appearance → Presets): *Venom* turns on every Venom row (FPS with lows, upscaler, PC and render latency, FG time, bottleneck, VRAM, GPU, CPU and RAM with usage and hotspots); *Venom Compact* puts FPS, PC latency, FG time, bottleneck, GPU and CPU on one line at the top center. One click, nothing else to set.
 
 ### Changed
 - **Frame generation time**: XeFG's time is now taken closer to its own GPU work (recent `libxess_fg`), so in theory it's more accurate. Other frame generations and older `libxess_fg` are timed as before.
-- **PC latency**: the input wait pings are paired with the game's frames as PresentMon does (a frame that started before the ping counts 0 ms), so the number should sit closer to PresentMon and FrameView.
 - **CPU sensors** ([#6](https://github.com/LorenzoKy/Optiscaler-Venom/issues/6)): CPU temperature and power still need HWiNFO, MSI Afterburner, Core Temp or AMD Adrenalin running, because Windows has no CPU sensors without a kernel driver. The CPU row tooltip, the ini, the log and the README now say so.
 
 ### Fixed
@@ -48,7 +48,7 @@ Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-b
 
 | Change | From | Ask |
 | --- | --- | --- |
-| HDR menu and OSD, XeFG time, PC latency pings, CPU sensor notes | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| HDR menu and OSD, Venom presets, XeFG time, CPU sensor notes | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
 | XeFG in Vulkan games | **dashdogy** | [dashdogy](https://github.com/dashdogy) on [PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240) |
 | Everything else | **Upstream** nightly-20261031 `e7e3872d` | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 

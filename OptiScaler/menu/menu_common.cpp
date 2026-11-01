@@ -9380,16 +9380,30 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                   "-upscalergraph,-lowlatency;FpsRow=2;UpdateInterval=250;Alpha=0.35;Font=bahnschrift.ttf;"
                   "LetterSpacing=0.5;LabelScale=0.85;ValueScale=1.1;LabelColor=0xFFFFFF;ValueColor=0xFF9A00;"
                   "GraphColor=0x00E5FF;BGColor=0x0A0F14;Rounding=10;HideAverages=true" },
+                { "Venom",
+                  "Every Venom metric, ready to use: FPS with lows, upscaler, PC and render latency,\n"
+                  "FG time, bottleneck, VRAM, GPU, CPU and RAM with usage and hotspots",
+                  "Type=7;Rows=fps,upscale,frametime,upscaler,latency,fgtime,bottleneck,vram,gpu,cpu,ram;"
+                  "FpsRow=2;ShowLows=true;ShowUsage=true;ShowGpuHotspot=true;ShowCpuHotspot=true;"
+                  "ShowFGTimeGraph=true;LatencyType=2;UpdateInterval=250;Alpha=0.5;Rounding=6" },
+                { "Venom Compact",
+                  "The main Venom metrics on one line at the top center:\n"
+                  "FPS, PC latency, FG time, bottleneck, GPU and CPU",
+                  "Pos=4;Type=7;Horizontal=true;Rows=fps,latency,fgtime,bottleneck,gpu,cpu;FpsRow=1;"
+                  "CompactLabels=true;HideAverages=true;ShowUsage=true;ShowFrameTimeGraph=false;"
+                  "ShowUpscalerTimeGraph=false;ShowFGTimeGraph=false;UpdateInterval=250;Alpha=0.4;Rounding=8" },
             };
 
-            const float presetCount = static_cast<float>(std::size(presets));
+            // Four buttons per line
+            constexpr size_t presetsPerLine = 4;
+            const float presetCount = static_cast<float>(presetsPerLine);
             const float buttonWidth =
                 (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * (presetCount - 1.0f)) /
                 presetCount;
 
             for (size_t i = 0; i < std::size(presets); i++)
             {
-                if (i > 0)
+                if (i % presetsPerLine != 0)
                     ImGui::SameLine();
 
                 if (ImGui::Button(presets[i].name, ImVec2(buttonWidth, 0.0f)))

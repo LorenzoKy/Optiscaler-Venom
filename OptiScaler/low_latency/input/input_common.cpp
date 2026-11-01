@@ -1314,10 +1314,10 @@ std::atomic_bool pingThreadRunning = false;
 
 void AddPingSample(uint64_t sentUs, uint64_t simStartUs)
 {
-    // As PresentMon: a frame that started before the ping counts 0 ms, and the average starts from 0
-    const double ms = simStartUs > sentUs ? (simStartUs - sentUs) / 1000.0 : 0.0;
+    const double ms = (simStartUs - sentUs) / 1000.0;
 
-    pingEmaMs += 0.1 * (ms - pingEmaMs);
+    // PresentMon's average of the input to frame start
+    pingEmaMs = pingSamples == 0 ? ms : pingEmaMs + 0.1 * (ms - pingEmaMs);
     pingSamples++;
 }
 
@@ -1363,8 +1363,8 @@ void InputCommon::note_latency_ping(uint64_t frameId)
 
     const auto& report = frame_reports[frameId % FRAME_REPORTS_BUFFER_SIZE];
 
-    // The simulation start of the frame the game marked, as PresentMon pairs them, even when it started before
-    if (report.frameID == frameId && report.simStartTime != 0)
+    // Usually the frame starts after the ping, else it's the next frame's start
+    if (report.frameID == frameId && report.simStartTime >= sentUs)
     {
         AddPingSample(sentUs, report.simStartTime);
         pingFrameId = 0;
@@ -1382,14 +1382,13 @@ void InputCommon::note_ping_sim_start(uint64_t frameId)
     if (pingFrameId == 0 || frameId < pingFrameId)
         return;
 
-    // Only the marked frame's own start, a later frame means it was missed
     const auto& report = frame_reports[frameId % FRAME_REPORTS_BUFFER_SIZE];
 
-    if (frameId == pingFrameId && report.frameID == frameId && report.simStartTime != 0 &&
-        report.simStartTime - std::min(report.simStartTime, pingFrameSentUs) < 1'000'000)
-    {
+    if (report.frameID != frameId || report.simStartTime < pingFrameSentUs)
+        return;
+
+    if (report.simStartTime - pingFrameSentUs < 1'000'000)
         AddPingSample(pingFrameSentUs, report.simStartTime);
-    }
 
     pingFrameId = 0;
 }

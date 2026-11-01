@@ -88,7 +88,7 @@ Menu → **FPS Overlay**:
   - **Hardware**: model names, CPU & GPU usage, GPU and CPU hotspot, game RAM, commit charge.
   - **Graphs**: one switch per graph. Each graph shows under its row while that row is on: frame time, upscaler time (on by default, like OptiScaler), FG time and **PC latency** (off by default, the last 18 seconds). They are not rows of their own any more.
 - **Latency Type**: PC latency (experimental, meant to match FrameView / PresentMon's, usually within a few ms), render latency or both. Needs a game with Reflex, XeLL or AntiLag 2.
-- **Appearance**: presets (*Default*, *Classic*, *Afterburner-Like*, *Glass Strip*), font, size, colors, shadow or outline, background, corners, position.
+- **Appearance**: presets (*Default*, *Classic*, *Afterburner-Like*, *Strip*, plus Venom's plug and play *Venom* and *Venom Compact* with the extra metrics already on), font, size, colors, shadow or outline, background, corners, position.
 - **Share Settings**: **Copy Code** puts your whole OSD in the clipboard, **Paste Code** applies someone else's. Share yours in the [Discord thread](#-discord).
 
 Every option is also an `FpsOverlay*` key in `OptiScaler.ini`, each one documented there.
@@ -118,7 +118,7 @@ Both need a game with **Reflex, XeLL or AntiLag 2** (its markers tell OptiScaler
   2. otherwise the Reflex driver's own reports (they stop at the game's GPU work, before frame generation);
   3. otherwise an **estimate** from the CPU-side markers only, up to the end of the present: shown as `(est.)`, it doesn't include the GPU time and reads lower than reality.
 - **PC latency** (experimental): the number tools like **NVIDIA FrameView** and **PresentMon** call PC latency, the time from your input to the frame on its way to the screen. It's the sum of two parts:
-  1. **input wait**: how long an input waits before the game's next simulation start picks it up. Venom measures it with pings like Reflex's PC Latency Stats, paired with the frames the same way PresentMon does (since v0.3); without pings it uses half a real frame, the average wait;
+  1. **input wait**: how long an input waits before the game's next simulation start picks it up. Venom measures it with pings like Reflex's PC Latency Stats; without pings it uses half a real frame, the average wait;
   2. **simulation to display**: from the simulation start to the end of the GPU work of **every frame shown**, generated frames included (with frame generation one real frame becomes several shown ones, each with its own latency).
 
   PC latency isn't shown when only the estimate is available, because it would be wrong.
@@ -164,7 +164,7 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 | GPU / CPU hotspot, temperatures and GPU usage on Linux | [v0.2 beta 2][b2], [beta 3][b3] | **Venom** |
 | `[XeFG] Vulkan` switch and safer Vulkan presents | [v0.2 beta 4][b4] | **Venom** |
 | OSD Options columns, graph switches, PC latency graph, Upscale Inputs on the Upscale row | [v0.2][v0.2] | **Venom** |
-| HDR menu and OSD on D3D12, more accurate XeFG time, PresentMon-like PC latency pings | [v0.3][v0.3] | **Venom** |
+| HDR menu and OSD on D3D12, more accurate XeFG time, Venom and Venom Compact OSD presets | [v0.3][v0.3] | **Venom** |
 | XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240), commits marked `Venom-Part: dashdogy`) | [v0.2 beta 4][b4] | **dashdogy** |
 | OSD customization (fonts, colors, presets, settings codes), Custom overlay type, upscale ratio row | upstream `master`, started in Venom ([PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238)) | **Upstream** |
 | Custom upscalers (`OptiScaler\custom` folder), in place of Venom's Extra dlls | nightly 2026-10-29 | **Upstream** |
