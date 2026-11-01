@@ -1925,8 +1925,10 @@ inline CpuMetrics PollCpu(const GpuInformation& gpuInfo)
         if (State::Instance().isRunningOnLinux)
             LOG_INFO("FPS overlay: no CPU temperature, no k10temp, zenpower or coretemp sensor in /sys/class/hwmon");
         else
-            LOG_INFO("FPS overlay: no CPU temperature, it needs HWiNFO with Shared Memory Support, MSI Afterburner "
-                     "with the CPU temperature monitored, Core Temp or AMD Adrenalin running");
+            LOG_INFO("FPS overlay: no CPU temperature{}, Windows has no CPU sensors without a driver: it needs "
+                     "HWiNFO with Shared Memory Support, MSI Afterburner with the CPU sensors monitored, Core Temp "
+                     "or AMD Adrenalin running",
+                     out.powerW.has_value() ? "" : " or power");
     }
 
     // 4. Windows PDH effective CPU clock fallback (works on all Intel & AMD CPUs)

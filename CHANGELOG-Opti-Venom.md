@@ -10,7 +10,8 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream | |
 | --- | --- | --- | --- |
-| [**v0.2.1**](#v021) · [`opti-venom-v0.2.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2.1) | 2026-10-31 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) | Latest |
+| [**v0.3**](#v03) · [`opti-venom-v0.3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3) | 2026-11-01 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) | Latest |
+| [v0.2.1](#v021) · [`opti-venom-v0.2.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2.1) | 2026-10-31 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) |  |
 | [v0.2](#v02) · [`opti-venom-v0.2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2) | 2026-10-25 | [nightly-20261025](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261025) = [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) |  |
 | [v0.2 beta 4](#v02-beta-4) · [`opti-venom-v0.2-beta4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | |
 | [v0.2 beta 3](#v02-beta-3) · [`opti-venom-v0.2-beta3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta3) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | |
@@ -21,6 +22,35 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.3
+
+> OptiScaler `10.0.0.1` (development build after `v0.9.4`), built on the latest official nightly [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = upstream `master` [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947), same upstream as v0.2.1.
+
+### New
+- **HDR menu and OSD** (D3D12): with HDR10 or scRGB output the OptiScaler menu and the OSD are drawn as in SDR and then converted to the game's HDR format (203 nits white), blended over the game like in SDR. Before they looked washed out. Automatic, no setting.
+
+### Changed
+- **Frame generation time**: XeFG's time is now taken closer to its own GPU work (recent `libxess_fg`), so in theory it's more accurate. Other frame generations and older `libxess_fg` are timed as before.
+- **PC latency**: the input wait pings are paired with the game's frames as PresentMon does (a frame that started before the ping counts 0 ms), so the number should sit closer to PresentMon and FrameView.
+- **CPU sensors** ([#6](https://github.com/LorenzoKy/Optiscaler-Venom/issues/6)): CPU temperature and power still need HWiNFO, MSI Afterburner, Core Temp or AMD Adrenalin running, because Windows has no CPU sensors without a kernel driver. The CPU row tooltip, the ini, the log and the README now say so.
+
+### Fixed
+- The frame generation time could stop updating after XeFG skipped running some of its command lists.
+
+### Upgrading
+- Nothing to do: ini files and settings codes keep working, no new keys.
+
+### Known limits
+- HDR conversion is D3D12 only; D3D11 and Vulkan games keep the previous HDR colors. HLG output isn't converted.
+
+### Who to ask
+
+| Change | From | Ask |
+| --- | --- | --- |
+| HDR menu and OSD, XeFG time, PC latency pings, CPU sensor notes | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG in Vulkan games | **dashdogy** | [dashdogy](https://github.com/dashdogy) on [PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240) |
+| Everything else | **Upstream** nightly-20261031 `e7e3872d` | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.2.1
 

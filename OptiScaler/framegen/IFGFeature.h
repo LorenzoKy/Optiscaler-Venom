@@ -124,6 +124,12 @@ class IFGFeature
     // Libraries that submit the frame generation's GPU work, their submissions give its GPU time
     virtual std::vector<HMODULE> GpuWorkModules() { return {}; }
 
+    // True while the frame generation times its own GPU work, then GpuWorkModules isn't needed. false stops it
+    virtual bool TimeOwnGpuWork(bool enable) { return false; }
+
+    // GPU ms of its own timed work that finished since the last call
+    virtual double CollectOwnGpuTime() { return 0.0; }
+
     int GetIndex();
     int GetIndexWillBeDispatched();
     UINT64 StartNewFrame();

@@ -1254,23 +1254,29 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
                             State::Instance().overlayShowsFGTime;
 
         static bool lastTimeFG = false;
+        static bool lastOwnTimer = false;
         static double modulesSetAt = 0.0;
         const auto now = Util::MillisecondsNow();
 
+        // XeFG times its own command lists when its library can, the others' submissions are timed
+        const bool ownTimer = fg != nullptr && fg->TimeOwnGpuWork(timeFG);
+        const bool timeSubmissions = timeFG && !ownTimer;
+
         // Its libraries can load after it starts
-        if (timeFG != lastTimeFG || (timeFG && now - modulesSetAt > 1000.0))
+        if (timeFG != lastTimeFG || ownTimer != lastOwnTimer || (timeSubmissions && now - modulesSetAt > 1000.0))
         {
-            if (timeFG)
+            if (timeSubmissions)
                 FGGpuTime_Dx12::Hook(state.currentFG->GetCommandQueue());
 
-            FGGpuTime_Dx12::SetModules(timeFG ? fg->GpuWorkModules() : std::vector<HMODULE> {});
+            FGGpuTime_Dx12::SetModules(timeSubmissions ? fg->GpuWorkModules() : std::vector<HMODULE> {});
             lastTimeFG = timeFG;
+            lastOwnTimer = ownTimer;
             modulesSetAt = now;
         }
 
         if (timeFG)
         {
-            const double fgTime = FGGpuTime_Dx12::Collect();
+            const double fgTime = ownTimer ? fg->CollectOwnGpuTime() : FGGpuTime_Dx12::Collect();
 
             State::Instance().frameTimeMutex.lock();
             State::Instance().fgTimes.push_back(fgTime);

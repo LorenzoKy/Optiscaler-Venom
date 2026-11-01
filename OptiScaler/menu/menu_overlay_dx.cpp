@@ -11,6 +11,7 @@
 #include <imgui/imgui_impl_win32.h>
 
 #include "menu_common.h"
+#include "menu_hdr_dx12.h"
 #include <shaders/menu_blur/MenuBlur_Dx11.h>
 #include <shaders/menu_blur/MenuBlur_Dx12.h>
 
@@ -38,6 +39,7 @@ static ID3D12CommandAllocator* g_commandAllocators[NUM_BACK_BUFFERS] = {};
 static ID3D12Resource* g_mainRenderTargetResource[NUM_BACK_BUFFERS] = {};
 static D3D12_CPU_DESCRIPTOR_HANDLE g_mainRenderTargetDescriptor[NUM_BACK_BUFFERS] = {};
 static std::unique_ptr<MenuBlur_Dx12> g_menuBlur;
+static std::unique_ptr<MenuHdr_Dx12> g_menuHdr;
 
 // Tracks GPU completion of menu command lists so an allocator is never reset while still executing
 static ID3D12Fence* g_menuFence = nullptr;
@@ -153,6 +155,10 @@ static void CleanupRenderTargetDx12(bool clearQueue)
         // Uses a descriptor from the ImGui heap, needs to go before it
         MenuCommon::SetBackgroundBlur(ImTextureID_Invalid);
         g_menuBlur.reset();
+        g_menuHdr.reset();
+
+        if (MenuHdr_Dx12::SetActive(false))
+            MenuCommon::ApplyThemeStyle();
 
         if (MenuOverlayBase::IsInited() && g_pd3dDeviceParam != nullptr && g_pd3dSrvDescHeap != nullptr &&
             ImGui::GetIO().BackendRendererUserData)
@@ -319,6 +325,16 @@ static void RenderImGui_DX11(IDXGISwapChain* pSwapChain)
                 backBuffer->Release();
         }
     }
+}
+
+// Waits for every submitted menu command list
+static void WaitMenuIdleDx12()
+{
+    if (g_menuFence == nullptr || g_menuFence->GetCompletedValue() >= g_menuFenceValue)
+        return;
+
+    if (g_menuFence->SetEventOnCompletion(g_menuFenceValue, g_menuFenceEvent) == S_OK)
+        WaitForSingleObject(g_menuFenceEvent, 2000);
 }
 
 static void RenderImGui_DX12(IDXGISwapChain* pSwapChainPlain)
@@ -537,9 +553,29 @@ static void RenderImGui_DX12(IDXGISwapChain* pSwapChainPlain)
             else
                 MenuCommon::SetBackgroundBlur(ImTextureID_Invalid);
 
+            // HDR swapchains: menu is drawn as SDR into a layer and converted by a composite pass
+            bool hdrComposite = false;
+            if (const auto hdrMode =
+                    MenuHdr_Dx12::TargetMode(g_mainRenderTargetResource[backBufferIdx]->GetDesc().Format);
+                hdrMode != MenuHdr_Dx12::Mode::None)
+            {
+                if (!g_menuHdr)
+                    g_menuHdr = std::make_unique<MenuHdr_Dx12>(device, &g_pd3dSrvDescHeapAlloc);
+
+                hdrComposite = g_menuHdr->Prepare(g_mainRenderTargetResource[backBufferIdx], hdrMode, WaitMenuIdleDx12);
+            }
+
+            // Menu colors depend on it, rebuild them when it changes
+            if (MenuHdr_Dx12::SetActive(hdrComposite))
+                MenuCommon::ApplyThemeStyle();
+
             if (MenuOverlayBase::RenderMenu())
             {
                 ImGui::Render();
+
+                if (hdrComposite)
+                    g_menuHdr->PatchDrawData(ImGui::GetDrawData(),
+                                             blurReady ? g_menuBlur->TextureId() : ImTextureID_Invalid);
 
                 const bool blurMenu = blurReady && MenuCommon::BackgroundBlurUsed();
                 ID3D12CommandAllocator* commandAllocator = g_commandAllocators[g_menuSlot];
@@ -598,11 +634,28 @@ static void RenderImGui_DX12(IDXGISwapChain* pSwapChainPlain)
                     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
                 }
 
+                if (hdrComposite)
+                {
+                    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+                    g_pd3dCommandList->ResourceBarrier(1, &barrier);
+
+                    g_menuHdr->CopyGameImage(g_pd3dCommandList, g_mainRenderTargetResource[backBufferIdx]);
+
+                    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+                    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                }
+
                 g_pd3dCommandList->ResourceBarrier(1, &barrier);
                 g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, NULL);
                 g_pd3dCommandList->SetDescriptorHeaps(1, &g_pd3dSrvDescHeap);
 
+                if (hdrComposite)
+                    g_menuHdr->BindLayer(g_pd3dCommandList);
+
                 ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList);
+
+                if (hdrComposite)
+                    g_menuHdr->Composite(g_pd3dCommandList, g_mainRenderTargetDescriptor[backBufferIdx]);
 
                 barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
                 barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;

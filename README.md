@@ -52,6 +52,9 @@ https://github.com/user-attachments/assets/191a3007-0457-4b5d-a357-0ee303b0d583
 2. Install it like regular OptiScaler: extract it next to the game's executable and rename `OptiScaler.dll` (for example to `dxgi.dll`). The full guide is in the [OptiScaler wiki](https://github.com/optiscaler/OptiScaler/wiki).
 3. Already using OptiScaler? Replace only `OptiScaler.dll` (renamed as before) and keep your `OptiScaler.ini`: the new keys fall back to their defaults. Take the archive's ini if you want them documented.
 
+> [!NOTE]
+> **CPU temperature and power need a sensor app running.** Windows doesn't give them to apps without a kernel driver, so the OSD reads them from **HWiNFO** (Shared Memory Support on), **MSI Afterburner** (CPU sensors monitored, RTSS not needed), **Core Temp** or **AMD Adrenalin**. Without one of them the CPU row shows only clock and usage. GPU sensors work on their own.
+
 ## 🧪 How to use the Venom features
 
 Everything is in the OptiScaler menu (`Insert` by default). With default settings Venom looks and behaves like upstream OptiScaler: nothing changes until you turn it on.
@@ -92,7 +95,11 @@ Every option is also an `FpsOverlay*` key in `OptiScaler.ini`, each one document
 
 ### ⏱️ Frame generation time
 
-Turn on **Frame Generation Time** (in **Rows → More Rows in Presets**, or in Custom's rows): the GPU time FSR FG, XeFG or DLSSG take per real frame and per generated frame, with **FPS Cost** the FPS they cost. D3D12 only.
+Turn on **Frame Generation Time** (in **Rows → More Rows in Presets**, or in Custom's rows): the GPU time FSR FG, XeFG or DLSSG take per real frame and per generated frame, with **FPS Cost** the FPS they cost. D3D12 only. Since v0.3 XeFG's time is measured closer to its actual work (with recent `libxess_fg` versions), so it should be more accurate.
+
+### 🌈 HDR
+
+Nothing to set: on D3D12 games with HDR output (HDR10 or scRGB) the OptiScaler menu and the OSD are converted to the game's HDR format, with the same colors and transparency as in SDR, instead of looking washed out. SDR games and D3D11 / Vulkan games keep the usual drawing.
 
 ### 🌋 XeFG in Vulkan games
 
@@ -111,7 +118,7 @@ Both need a game with **Reflex, XeLL or AntiLag 2** (its markers tell OptiScaler
   2. otherwise the Reflex driver's own reports (they stop at the game's GPU work, before frame generation);
   3. otherwise an **estimate** from the CPU-side markers only, up to the end of the present: shown as `(est.)`, it doesn't include the GPU time and reads lower than reality.
 - **PC latency** (experimental): the number tools like **NVIDIA FrameView** and **PresentMon** call PC latency, the time from your input to the frame on its way to the screen. It's the sum of two parts:
-  1. **input wait**: how long an input waits before the game's next simulation start picks it up. Venom measures it with pings like Reflex's PC Latency Stats; without pings it uses half a real frame, the average wait;
+  1. **input wait**: how long an input waits before the game's next simulation start picks it up. Venom measures it with pings like Reflex's PC Latency Stats, paired with the frames the same way PresentMon does (since v0.3); without pings it uses half a real frame, the average wait;
   2. **simulation to display**: from the simulation start to the end of the GPU work of **every frame shown**, generated frames included (with frame generation one real frame becomes several shown ones, each with its own latency).
 
   PC latency isn't shown when only the estimate is available, because it would be wrong.
@@ -141,7 +148,7 @@ What limits the frame rate: **GPU Bound**, **CPU Bound**, **FPS Limit** or **Ref
 
 - **VRAM**: the game's video memory use, the budget Windows gives it and the memory clock, from DXGI / the driver.
 - **GPU**: temperature, power, voltage and core clock from the GPU's driver; **hotspot** is the hottest sensor (AMD junction, NVIDIA hot spot; RTX 50 GPUs don't report it, then HWiNFO or Afterburner are used).
-- **CPU**: temperature, power, voltage and clock. Windows doesn't give CPU temperatures to apps, so they come from **HWiNFO** (with Shared Memory Support on), **MSI Afterburner**, **Core Temp** or **AMD Adrenalin** running in the background; on Linux (Proton/Wine) from the kernel's hwmon sensors. Nothing running = no temperature (the clock still shows, from Windows' counters). Power and voltage come from the same apps. **Hotspot** is the hottest core or CCD.
+- **CPU**: temperature, power, voltage and clock. Windows doesn't give CPU temperatures or power to apps without a kernel driver, so they come from **HWiNFO** (with Shared Memory Support on), **MSI Afterburner**, **Core Temp** or **AMD Adrenalin** running in the background; on Linux (Proton/Wine) from the kernel's hwmon sensors. Nothing running = no temperature (the clock still shows, from Windows' counters). Power and voltage come from the same apps. **Hotspot** is the hottest core or CCD.
 - **Usage %**: GPU and CPU usage as Task Manager shows it.
 - **RAM**: system RAM in use, plus the game's own working set and, if on, the commit charge (RAM + pagefile).
 - **Date and time**: in your Windows format.
@@ -157,6 +164,7 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 | GPU / CPU hotspot, temperatures and GPU usage on Linux | [v0.2 beta 2][b2], [beta 3][b3] | **Venom** |
 | `[XeFG] Vulkan` switch and safer Vulkan presents | [v0.2 beta 4][b4] | **Venom** |
 | OSD Options columns, graph switches, PC latency graph, Upscale Inputs on the Upscale row | [v0.2][v0.2] | **Venom** |
+| HDR menu and OSD on D3D12, more accurate XeFG time, PresentMon-like PC latency pings | [v0.3][v0.3] | **Venom** |
 | XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240), commits marked `Venom-Part: dashdogy`) | [v0.2 beta 4][b4] | **dashdogy** |
 | OSD customization (fonts, colors, presets, settings codes), Custom overlay type, upscale ratio row | upstream `master`, started in Venom ([PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238)) | **Upstream** |
 | Custom upscalers (`OptiScaler\custom` folder), in place of Venom's Extra dlls | nightly 2026-10-29 | **Upstream** |
@@ -168,6 +176,7 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 [b3]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta3
 [b4]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4
 [v0.2]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2
+[v0.3]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3
 
 ## 🛟 Who to ask
 

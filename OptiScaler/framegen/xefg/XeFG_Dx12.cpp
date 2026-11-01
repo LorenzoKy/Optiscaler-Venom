@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "XeFG_Dx12.h"
 
+#include <gpu_time/XeFGGpuTime_Dx12.h>
 #include <hudfix/Hudfix_Dx11.h>
 #include <hudfix/Hudfix_Dx12.h>
 
@@ -169,6 +170,7 @@ bool XeFG_Dx12::DestroySwapchainContext()
         auto context = _swapChainContext;
         _swapChainContext = nullptr;
 
+        XeFGGpuTime_Dx12::Forget(context);
         auto result = XeFGProxy::Destroy()(context);
 
         LOG_INFO("Destroy result: {} ({})", magic_enum::enum_name(result), (UINT) result);
@@ -1617,6 +1619,10 @@ bool XeFG_Dx12::SetResource(Dx12Resource* inputResource)
 void XeFG_Dx12::SetCommandQueue(FG_ResourceType type, ID3D12CommandQueue* queue) { _gameCommandQueue = queue; }
 
 std::vector<HMODULE> XeFG_Dx12::GpuWorkModules() { return { XeFGProxy::Module() }; }
+
+bool XeFG_Dx12::TimeOwnGpuWork(bool enable) { return XeFGGpuTime_Dx12::Enable(_swapChainContext, enable); }
+
+double XeFG_Dx12::CollectOwnGpuTime() { return XeFGGpuTime_Dx12::Collect(); }
 
 bool XeFG_Dx12::ReleaseSwapchain(HWND hwnd)
 {

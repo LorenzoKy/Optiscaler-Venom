@@ -48,6 +48,7 @@
 #include <proxies/Dxgi_Proxy.h>
 #include <misc/FrameLimit.h>
 #include <dxgi1_4.h>
+#include "menu_hdr_dx12.h"
 
 enum class UiTargetMode
 {
@@ -371,8 +372,9 @@ static const char* overlayRowTips[] = {
     "Plus the memory clock when the GPU reports it.",
     "GPU temperature, power, voltage and clock. Usage and hotspot are in OSD Options.",
     "CPU temperature, power, voltage and clock. Usage and hotspot are in OSD Options.\n"
-    "On Windows the temperatures need HWiNFO (Shared Memory Support on), MSI Afterburner,\n"
-    "Core Temp or AMD Adrenalin running. On Linux they're read from the kernel's sensors.",
+    "Windows has no CPU temperature or power without a driver: they need HWiNFO\n"
+    "(Shared Memory Support on), MSI Afterburner (CPU sensors monitored), Core Temp\n"
+    "or AMD Adrenalin running. On Linux they're read from the kernel's sensors.",
     "System RAM in use and total",
     "The date and time, in the format Windows uses",
 };
@@ -1992,6 +1994,10 @@ static ImVec4 StatusError() { return toneMapColor(ImVec4(1.f, 0.f, 0.f, 1.f)); }
 
 static ImVec4 toneMapColor(const ImVec4& color)
 {
+    // Converted to the HDR output by the DX12 composite pass
+    if (MenuHdr_Dx12::IsActive())
+        return color;
+
     const auto mode = getUiTargetMode();
 
     switch (mode)

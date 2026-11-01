@@ -198,6 +198,7 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClInclude Include="fsr4\FSR4DriverProviderVk.h" />
     <ClInclude Include="gpu_time\GpuTime_Dx11.h" />
     <ClInclude Include="gpu_time\FGGpuTime_Dx12.h" />
+    <ClInclude Include="gpu_time\XeFGGpuTime_Dx12.h" />
     <ClInclude Include="gpu_time\GpuTime_Dx12.h" />
     <ClInclude Include="gpu_time\GpuTime_Vk.h" />
     <ClInclude Include="hooks\Amdxc64_Hooks.h" />
@@ -573,6 +574,7 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClCompile Include="fsr4\FSR4DriverProviderVk.cpp" />
     <ClCompile Include="gpu_time\GpuTime_Dx11.cpp" />
     <ClCompile Include="gpu_time\FGGpuTime_Dx12.cpp" />
+    <ClCompile Include="gpu_time\XeFGGpuTime_Dx12.cpp" />
     <ClCompile Include="gpu_time\GpuTime_Dx12.cpp" />
     <ClCompile Include="gpu_time\GpuTime_Vk.cpp" />
     <ClCompile Include="hooks\Amdxc64_Hooks.cpp" />
