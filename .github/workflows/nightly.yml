@@ -2,7 +2,8 @@
 # GitHub orders releases by the UTC day of the commit the tag points to, and releases of the same day by tag name
 # (descending), not by time: every release tag must sit on a commit made at publish time (nightly: the "Changelog"
 # commit below; manual releases: tag a fresh commit) and .github/scripts/check-release-order.sh must pass. A nightly
-# sorts below a release of its day, so it isn't built on a day a release is already out.
+# is tagged after the latest release (opti-venom-v0.3-nightly-20261102), so it sorts above a release of its day and
+# below the next one: it comes out also on a day a release is already out.
 # Every day: takes the latest official OptiScaler nightly, applies the Opti-Venom
 # patches (branch opti-venom of LorenzoKy/OptiScaler) on the same upstream commit,
 # builds it and publishes a pre-release. On a conflict it skips the build and opens an issue.
@@ -14,14 +15,14 @@
 # GitHub starts scheduled runs late, often by hours (upstream's 04:00 UTC nightly comes out around 09:00 UTC),
 # so a quick check runs every hour and the build starts at the first check that finds today's upstream nightly
 # not built yet. If it is still missing at 20:00 Italian time the check fails, so GitHub sends a mail.
-# Two-way sync: a nightly is published only if the patch branch has the latest release (.github/venom-patch),
-# and none is needed on a day a release came out with the current patches on that nightly.
+# Two-way sync: a nightly is published only if the patch branch has the latest release (.github/venom-patch).
+# Every day with an upstream nightly gets a Venom nightly, also when a Venom release came out that day.
 name: Nightly
 
 on:
   schedule:
-    # Off the full hour, where GitHub's queue is longest
-    - cron: "23 5-21 * * *"
+    # Every hour, all day, off the full hour where GitHub's queue is longest
+    - cron: "23 * * * *"
   workflow_dispatch:
     inputs:
       nightly_tag:
@@ -58,6 +59,7 @@ jobs:
       sha: ${{ steps.find.outputs.sha }}
       date: ${{ steps.find.outputs.date }}
       ours: ${{ steps.find.outputs.ours }}
+      replace: ${{ steps.find.outputs.replace }}
       url: ${{ steps.find.outputs.url }}
 
     steps:
@@ -73,18 +75,26 @@ jobs:
         [ -z "$tag" ] && { echo "::error::No upstream nightly found"; exit 1; }
         hour=$(TZ=Europe/Rome date +%-H)
         if [ "${{ github.event_name }}" = "schedule" ] && [ "${tag#nightly-}" != "$(date -u +%Y%m%d)" ]; then
-          if [ "$hour" -ge 20 ]; then
+          # Once a day, not every hour until midnight
+          if [ "$hour" -eq 20 ]; then
             echo "::error::$hour:00 Italian time and today's upstream nightly is still missing (latest: $tag)"; exit 1
           fi
           echo "Today's upstream nightly is not out yet (latest: $tag), the next hourly check looks again"
           echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
         fi
         date=${tag#nightly-}
-        ours="opti-venom-nightly-$date"
-        if [ "${{ inputs.force }}" != "true" ] && gh release view "$ours" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-          echo "$ours already released, nothing to do"
+        # One nightly per day, whatever release it was tagged after (old ones: opti-venom-nightly-<date>)
+        done_tag=$(gh release list -R "$GITHUB_REPOSITORY" -L 100 --json tagName \
+          --jq "[.[] | select(.tagName | endswith(\"-nightly-$date\"))][0].tagName // empty")
+        if [ "${{ inputs.force }}" != "true" ] && [ -n "$done_tag" ]; then
+          echo "$done_tag already released, nothing to do"
           echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
         fi
+        # Tagged after the latest release: on the same UTC day it sorts above it (opti-venom-v0.3-nightly-... >
+        # opti-venom-v0.3) and below the next one (opti-venom-v0.3.1, opti-venom-v0.4-beta1)
+        last=$(gh release list -R "$GITHUB_REPOSITORY" -L 100 --json tagName,isDraft \
+          --jq '[.[] | select(.isDraft | not) | select(.tagName | test("-nightly-[0-9]{8}$") | not)][0].tagName // empty')
+        ours="${last:-opti-venom}-nightly-$date"
         published=$(gh release view "$tag" -R "$NIGHTLY_REPO" --json publishedAt --jq .publishedAt)
         # The upstream nightly builds master as it is when its run starts. Its notes skip merge commits, so their
         # first commit isn't always the one built: take master's last commit before that run started.
@@ -92,27 +102,11 @@ jobs:
           --jq "[.workflow_runs[] | select(.run_started_at <= \"$published\")][0].run_started_at")
         sha=$(gh api "repos/$UPSTREAM/commits?sha=master&until=${started:-$published}&per_page=1" --jq '.[0].sha')
         [ -z "$sha" ] && { echo "::error::No upstream commit found before $published"; exit 1; }
-        # Not needed when a Venom release came out today with the current patches on this nightly or a newer master
-        patch_head=$(gh api "repos/$PATCH_REPO/commits/$PATCH_BRANCH" --jq .sha)
-        release_patch=$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/venom-patch" --jq .content 2>/dev/null \
-          | base64 -d 2>/dev/null | tr -d '[:space:]' || true)
-        last=$(gh release list -R "$GITHUB_REPOSITORY" -L 30 --json tagName,publishedAt,isDraft \
-          --jq '[.[] | select(.isDraft | not) | select(.tagName | startswith("opti-venom-nightly-") | not)][0] | .tagName + " " + .publishedAt')
-        last_day=${last#* }
-        if [ "${{ inputs.force }}" != "true" ] && [ "${last_day:0:10}" = "$(date -u +%F)" ] && [ "$release_patch" = "$patch_head" ]; then
-          status=$(gh api "repos/$PATCH_REPO/compare/$sha...$patch_head" --jq .status 2>/dev/null || true)
-          if [ "$status" = "ahead" ] || [ "$status" = "identical" ]; then
-            echo "${last% *}, released today, already has $tag and the current Venom changes: no nightly needed"
-            echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-        fi
-        # It must be listed above every other release, also when forced: a release already out today stays above it
-        if ! ORDER_LEVEL=notice bash .github/scripts/check-release-order.sh "$GITHUB_REPOSITORY" "$ours" "$(date -u +%FT%TZ)"; then
-          echo "::warning::$ours not built: it wouldn't be listed as the newest release, the next day's nightly will be"
-          echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
-        fi
+        # It must be listed above every other release: the tag after the latest release makes it so, this only warns
+        ORDER_LEVEL=warning bash .github/scripts/check-release-order.sh "$GITHUB_REPOSITORY" "$ours" "$(date -u +%FT%TZ)" || true
         {
           echo "build=true"; echo "tag=$tag"; echo "sha=$sha"; echo "date=$date"; echo "ours=$ours"
+          echo "replace=$done_tag"
           echo "url=https://github.com/$NIGHTLY_REPO/releases/tag/$tag"
         } >> "$GITHUB_OUTPUT"
         echo "Upstream nightly $tag (run started ${started:-unknown}) = $UPSTREAM@$sha"
@@ -192,6 +186,7 @@ jobs:
       SHA: ${{ needs.check.outputs.sha }}
       DATE: ${{ needs.check.outputs.date }}
       OURS: ${{ needs.check.outputs.ours }}
+      REPLACE: ${{ needs.check.outputs.replace }}
       NIGHTLY_URL: ${{ needs.check.outputs.url }}
 
     steps:
@@ -298,7 +293,7 @@ jobs:
       env:
         SHA: ${{ steps.merge.outputs.upstream_sha }}
       run: |
-        prev=$(sed -n '/<!-- nightly-rows -->/,$p' ../venom/CHANGELOG-Opti-Venom.md | grep '^|' | grep -vF "$OURS" | head -1 \
+        prev=$(sed -n '/<!-- nightly-rows -->/,$p' ../venom/CHANGELOG-Opti-Venom.md | grep '^|' | grep -vF -- "-nightly-$DATE)" | head -1 \
           | grep -oE "github.com/$UPSTREAM/commit/[0-9a-f]{40}" | head -1 | grep -oE '[0-9a-f]{40}$' || true)
         since=last
         if [ -n "$prev" ] && git merge-base --is-ancestor "$prev" "$SHA"; then
@@ -337,7 +332,7 @@ jobs:
         release="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$OURS"
         row="| ${d:0:4}-${d:4:2}-${d:6:2} | [**nightly $d**]($release) | [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA) · [$TAG]($NIGHTLY_URL) | [\`${psha:0:8}\`](https://github.com/$PATCH_REPO/commit/$psha) | ${{ steps.upstream.outputs.count }} OptiScaler · ${{ steps.upstream.outputs.venom_count }} Venom |"
         cd venom
-        grep -vF "/releases/tag/$OURS)" CHANGELOG-Opti-Venom.md | awk -v r="$row" '{print} /<!-- nightly-rows -->/{print r}' > cl.tmp
+        grep -vF -- "-nightly-$d)" CHANGELOG-Opti-Venom.md | awk -v r="$row" '{print} /<!-- nightly-rows -->/{print r}' > cl.tmp
         mv cl.tmp CHANGELOG-Opti-Venom.md
 
     - name: Add MSBuild to PATH
@@ -391,20 +386,13 @@ jobs:
       run: |
         target="${{ steps.changelog.outputs.target }}"
         name="${{ steps.package.outputs.name }}"
-        repo="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
         d="$DATE"
         {
-          echo "> [!WARNING]"
-          echo "> **Automatic build, not tested in game.** For a checked version use the [latest stable release]($repo/releases/latest)."
-          echo
-          echo "| | Built from | Date |"
-          echo "| --- | --- | --- |"
           if [ "${{ steps.merge.outputs.newer }}" = "true" ]; then
-            echo "| **OptiScaler** | \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA), newer than nightly [$TAG]($NIGHTLY_URL) | ${{ steps.merge.outputs.upstream_date }} |"
+            echo "Automatic build from Opti merge: \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA), newer than [$TAG]($NIGHTLY_URL)."
           else
-            echo "| **OptiScaler** | nightly [$TAG]($NIGHTLY_URL), \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA) | ${{ steps.merge.outputs.upstream_date }} |"
+            echo "Automatic build from Opti merge: [$TAG]($NIGHTLY_URL), \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA)."
           fi
-          echo "| **Venom** | [\`$PATCH_BRANCH\`](https://github.com/$PATCH_REPO/tree/$PATCH_BRANCH) at [\`${{ steps.merge.outputs.patch }}\`](https://github.com/$PATCH_REPO/commit/${{ steps.merge.outputs.patch_sha }}) | ${{ steps.merge.outputs.patch_date }} |"
           echo
           if [ "${{ steps.upstream.outputs.since }}" = "last" ]; then
             echo "### 🆕 OptiScaler changes since the last Venom nightly"
@@ -417,18 +405,11 @@ jobs:
           echo "### 🐍 Venom changes in this build"
           echo
           cat patches.txt
-          echo
-          echo "### 📦 Install"
-          echo
-          echo "Extract \`$name.7z\` into the game's folder, as any OptiScaler build. To check the download: \`sha256sum -c $name.7z.sha256\`."
-          echo
-          echo "### 🛟 Who to ask"
-          echo
-          echo "Open an [issue here]($repo/issues) for any problem with this build. I only handle what is mine (**Venom**): the Venom changes listed above. Everything else is upstream OptiScaler's: check it with the official nightly and report it to the [OptiScaler team](https://github.com/$UPSTREAM/issues). Third-party code in a build (marked \`Venom-Part\`) goes to its author. More in the [README]($repo/blob/main/README.md#-who-to-ask)."
-          echo
-          echo "<sub>Every nightly is in the [changelog]($repo/blob/main/CHANGELOG-Opti-Venom.md#nightly-builds), dates are UTC.</sub>"
         } > notes.md
-        gh release delete "$OURS" -R "$GITHUB_REPOSITORY" --cleanup-tag -y 2>/dev/null || true
+        # A forced rebuild replaces the day's nightly, also one tagged after an older release
+        for t in "$OURS" $REPLACE; do
+          gh release delete "$t" -R "$GITHUB_REPOSITORY" --cleanup-tag -y 2>/dev/null || true
+        done
         gh release create "$OURS" "$name.7z" "$name.7z.sha256" -R "$GITHUB_REPOSITORY" \
           --target "${target:-$GITHUB_SHA}" --prerelease --latest=false \
           --title "OptiScaler Venom nightly ${d:0:4}-${d:4:2}-${d:6:2}" --notes-file notes.md
@@ -440,6 +421,8 @@ jobs:
     - name: Remove old nightlies
       if: steps.merge.outputs.conflict == 'false'
       run: |
+        # Newest first by the date at the end of the tag, whatever release it was tagged after
         gh release list -R "$GITHUB_REPOSITORY" -L 200 --json tagName --jq '.[].tagName' \
-          | grep '^opti-venom-nightly-' | sort -r | tail -n +$((KEEP_NIGHTLIES + 1)) \
+          | grep -E -- '-nightly-[0-9]{8}$' | awk '{print substr($0, length($0) - 7), $0}' | sort -r | cut -d' ' -f2 \
+          | tail -n +$((KEEP_NIGHTLIES + 1)) \
           | while read -r t; do gh release delete "$t" -R "$GITHUB_REPOSITORY" --cleanup-tag -y; done

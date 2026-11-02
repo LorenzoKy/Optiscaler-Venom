@@ -4,7 +4,7 @@
 # same day by tag name, in descending byte order: the time of day doesn't count. So the new tag's commit must be of
 # today (or of the newest day already listed) and, on the same day, the tag name must sort after the others':
 # opti-venom-v0.3-beta2 after opti-venom-v0.3-beta1, the stable opti-venom-v0.3.0 after both ('.' > '-'),
-# a nightly (opti-venom-nightly-...) never after a release of its day.
+# a nightly tagged after the latest release (opti-venom-v0.3-nightly-20261102) after that release.
 # Usage: check-release-order.sh <repo> <tag> <commit date, ISO 8601>
 # Exit 0: it will be on top. Exit 1: it won't, the reason is printed as a GitHub annotation of level ORDER_LEVEL
 # (default error).
