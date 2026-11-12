@@ -55,7 +55,10 @@ for _ in $(seq "$(git rev-list --count "$range")"); do
   else
     echo "$commit" >> "$out/resolved.txt"
   fi
-  if GIT_EDITOR=true git cherry-pick --continue >> "$out/pick.log" 2>&1; then
+  # A patch upstream has meanwhile taken in is empty once solved: --continue refuses it, so it is skipped
+  step=--continue
+  git diff --cached --quiet && step=--skip
+  if GIT_EDITOR=true git cherry-pick "$step" >> "$out/pick.log" 2>&1; then
     exit 0
   fi
 done
