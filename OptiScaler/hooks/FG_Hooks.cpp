@@ -6,6 +6,8 @@
 #include <framegen/xefg/XeFG_Dx12.h>
 #include <framegen/dlssg/DLSSG_Dx12.h>
 #include <framegen/reprojection/Reprojection_Dx12.h>
+#include <framegen/flipmeter/FlipMeterFG_Dx12.h>
+#include <framegen/nvngx/Nvngx_FG.h>
 
 #include <inputs/FG/FSR3_Dx12_FG.h>
 #include <inputs/FG/FfxApi_Dx12_FG.h>
@@ -159,6 +161,17 @@ static bool CheckForFGStatus()
 
         Config::Instance()->FGNvngxReplacement.set_volatile_value(FGNvngxReplacement::None);
         State::Instance().activeFgNvngx = Config::Instance()->FGNvngxReplacement.value_or_default();
+    }
+
+    // The flip meter output only presents, its frames come from a Nvngx replacement
+    else if (State::Instance().activeFgOutput == FGOutput::FlipMeter && !Nvngx_FG::isDx12Available())
+    {
+        ImGui::InsertNotification(
+            { ImGuiToastType::Error, 20000, "Can't init Flip Meter Output\nNo usable FG Nvngx Replacement selected" });
+
+        LOG_DEBUG("No Nvngx replacement for the flip meter output, disabling FGOutput");
+        Config::Instance()->FGOutput.set_volatile_value(FGOutput::NoFG);
+        State::Instance().activeFgOutput = Config::Instance()->FGOutput.value_or_default();
     }
 
     if (State::Instance().activeFgOutput == FGOutput::NoFG)
@@ -340,6 +353,10 @@ HRESULT FGHooks::CreateSwapChain(IDXGIFactory* pFactory, IUnknown* pDevice, DXGI
         {
             State::Instance().currentFG = new Reprojection_Dx12();
         }
+        else if (State::Instance().activeFgOutput == FGOutput::FlipMeter)
+        {
+            State::Instance().currentFG = new FlipMeterFG_Dx12();
+        }
     }
 
     // Create FG swapchain
@@ -465,6 +482,10 @@ HRESULT FGHooks::CreateSwapChainForHwnd(IDXGIFactory* pFactory, IUnknown* pDevic
         else if (State::Instance().activeFgOutput == FGOutput::Reprojection)
         {
             State::Instance().currentFG = new Reprojection_Dx12();
+        }
+        else if (State::Instance().activeFgOutput == FGOutput::FlipMeter)
+        {
+            State::Instance().currentFG = new FlipMeterFG_Dx12();
         }
     }
 
@@ -1493,8 +1514,10 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
 
     // The game's FSR FG present callback draws its UI on every present, also while frame generation is off
     // (menus, pause): AMD's swapchain calls it on that path too. Present() submits the UI command list.
+    // Only while FG is off, running FG without the mutex above would race with EvaluateState.
     const bool fsrFgUi = (state.activeFgInput == FGInput::FSRFG || state.activeFgInput == FGInput::FSRFG30) &&
-                         state.swapchainInteropApi == SwapchainInteropApi::None;
+                         state.swapchainInteropApi == SwapchainInteropApi::None && fg != nullptr &&
+                         (!fg->IsActive() || fg->IsPaused());
 
     if (willPresent && fg != nullptr && (fgFeatureActive || fsrFgUi))
     {

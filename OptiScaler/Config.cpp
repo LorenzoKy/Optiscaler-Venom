@@ -100,8 +100,9 @@ bool Config::Reload(std::filesystem::path iniPath)
             FGInput.set_from_config(readString("FrameGen", "FGInput").transform(CodeToEnum<enum FGInput>));
             FGOutput.set_from_config(readString("FrameGen", "FGOutput").transform(CodeToEnum<enum FGOutput>));
 
-            const bool canUseNvngxReplacement =
-                FGInput.value_or_default() == FGInput::NvngxFG || FGOutput.value_or_default() == FGOutput::DLSSG;
+            const bool canUseNvngxReplacement = FGInput.value_or_default() == FGInput::NvngxFG ||
+                                                FGOutput.value_or_default() == FGOutput::DLSSG ||
+                                                FGOutput.value_or_default() == FGOutput::FlipMeter;
 
             if (auto FGNvngxReplacementString = readString("FrameGen", "FGNvngxReplacement");
                 canUseNvngxReplacement && FGNvngxReplacementString.has_value())
@@ -247,6 +248,13 @@ bool Config::Reload(std::filesystem::path iniPath)
             FGXeFGDebugView.set_from_config(readBool("XeFG", "DebugView"));
             FGXeFGForceBorderless.set_from_config(readBool("XeFG", "ForceBorderless"));
             FGXeFGVulkan.set_from_config(readBool("XeFG", "Vulkan"));
+        }
+
+        {
+            FGFlipMeterInterpolationCount.set_from_config(readInt("FlipMeter", "InterpolationCount"));
+            if (FGFlipMeterInterpolationCount.has_value() &&
+                (FGFlipMeterInterpolationCount.value() < 1 || FGFlipMeterInterpolationCount.value() > 5))
+                FGFlipMeterInterpolationCount.reset();
         }
 
         {
@@ -1622,6 +1630,11 @@ bool Config::SaveIni()
         ini.SetValue("XeFG", "ForceBorderless",
                      GetBoolValue(Instance()->FGXeFGForceBorderless.value_for_config()).c_str());
         ini.SetValue("XeFG", "Vulkan", GetBoolValue(Instance()->FGXeFGVulkan.value_for_config()).c_str());
+    }
+
+    {
+        ini.SetValue("FlipMeter", "InterpolationCount",
+                     GetIntValue(Instance()->FGFlipMeterInterpolationCount.value_for_config()).c_str());
     }
 
     {
