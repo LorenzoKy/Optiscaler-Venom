@@ -1224,7 +1224,7 @@ static State::FfxVersionList* GetFfxVersionList(Upscaler upscaler, API api)
 // The module running the selected FFX upscaler, for its FSR 4 models
 static HMODULE Fsr4UpscalerModule(Upscaler upscaler, API api)
 {
-    if (auto custom = SelectedCustomFfx(SelectedCustom(upscaler, api), api))
+    if (auto custom = SelectedCustomFfx(CustomProviders::Selected(api, upscaler), upscaler, api))
         return custom->module.dll;
 
     auto versions = GetFfxVersionList(upscaler, api);
