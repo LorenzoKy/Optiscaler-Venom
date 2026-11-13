@@ -93,6 +93,8 @@ class InputCommon
     // it last marked
     inline static std::atomic<ID3D12CommandQueue*> xefg_present_queue = nullptr;
     inline static std::atomic_uint64_t xefg_frame_id = 0;
+    // The present any XeFG (also one OptiScaler doesn't own) last sent its XeLL markers on, 0 = never
+    inline static std::atomic_uint64_t xefg_marker_present = 0;
     // Time the output's last sleep took, for XeFG's Dynamic MFG (the frame time it doesn't need)
     inline static std::atomic<double> last_sleep_ms = 0.0;
     // The same for the overlay, summed until it takes them
@@ -234,6 +236,9 @@ class InputCommon
     // Called on every present: Force State and OptiScaler's FPS limit for the active output. The Reflex output is
     // limited through the Reflex hooks.
     static void update();
+
+    // Vulkan outputs work on the game's device, they go before it
+    static void vk_device_destroyed(void* device);
     static bool can_limit_fps() { return limits_fps; }
 
     // OptiScaler's own frame generation presenter (FSR-FG, XeFG) gives the Reflex output the async calls DLSSG makes,

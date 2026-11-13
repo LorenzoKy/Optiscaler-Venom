@@ -3,38 +3,35 @@
 
 #include <misc/DeferredRelease.h>
 
-void Nvngx_DllProxy::LoadNgxExports()
+void Nvngx_DllProxy::QueryReportedParameters()
 {
-    _DLSSG_D3D12_Init = (PFN_D3D12_Init) GetProcAddress(dll, "NVSDK_NGX_D3D12_Init");
-    _DLSSG_D3D12_Init_Ext = (PFN_D3D12_Init_Ext) GetProcAddress(dll, "NVSDK_NGX_D3D12_Init_Ext");
-    _DLSSG_D3D12_Shutdown = (PFN_D3D12_Shutdown) GetProcAddress(dll, "NVSDK_NGX_D3D12_Shutdown");
-    _DLSSG_D3D12_Shutdown1 = (PFN_D3D12_Shutdown1) GetProcAddress(dll, "NVSDK_NGX_D3D12_Shutdown1");
-    _DLSSG_D3D12_GetScratchBufferSize =
-        (PFN_D3D12_GetScratchBufferSize) GetProcAddress(dll, "NVSDK_NGX_D3D12_GetScratchBufferSize");
-    _DLSSG_D3D12_CreateFeature = (PFN_D3D12_CreateFeature) GetProcAddress(dll, "NVSDK_NGX_D3D12_CreateFeature");
-    _DLSSG_D3D12_ReleaseFeature = (PFN_D3D12_ReleaseFeature) GetProcAddress(dll, "NVSDK_NGX_D3D12_ReleaseFeature");
-    _DLSSG_D3D12_GetFeatureRequirements =
-        (PFN_D3D12_GetFeatureRequirements) GetProcAddress(dll, "NVSDK_NGX_D3D12_GetFeatureRequirements");
-    _DLSSG_D3D12_EvaluateFeature = (PFN_D3D12_EvaluateFeature) GetProcAddress(dll, "NVSDK_NGX_D3D12_EvaluateFeature");
-    _DLSSG_D3D12_PopulateParameters_Impl =
-        (PFN_D3D12_PopulateParameters_Impl) GetProcAddress(dll, "NVSDK_NGX_D3D12_PopulateParameters_Impl");
+    // Both take the same parameters, which aren't tied to an API
+    auto populate = ngx.D3D12_PopulateParameters_Impl != nullptr
+                        ? ngx.D3D12_PopulateParameters_Impl
+                        : (PFN_D3D12_PopulateParameters_Impl) ngx.VULKAN_PopulateParameters_Impl;
+    NVNGX_Parameters params(API::DX12, false);
 
-    _DLSSG_VULKAN_Init = (PFN_VULKAN_Init) GetProcAddress(dll, "NVSDK_NGX_VULKAN_Init");
-    _DLSSG_VULKAN_Init_Ext = (PFN_VULKAN_Init_Ext) GetProcAddress(dll, "NVSDK_NGX_VULKAN_Init_Ext");
-    _DLSSG_VULKAN_Init_Ext2 = (PFN_VULKAN_Init_Ext2) GetProcAddress(dll, "NVSDK_NGX_VULKAN_Init_Ext2");
-    _DLSSG_VULKAN_Shutdown = (PFN_VULKAN_Shutdown) GetProcAddress(dll, "NVSDK_NGX_VULKAN_Shutdown");
-    _DLSSG_VULKAN_Shutdown1 = (PFN_VULKAN_Shutdown1) GetProcAddress(dll, "NVSDK_NGX_VULKAN_Shutdown1");
-    _DLSSG_VULKAN_GetScratchBufferSize =
-        (PFN_VULKAN_GetScratchBufferSize) GetProcAddress(dll, "NVSDK_NGX_VULKAN_GetScratchBufferSize");
-    _DLSSG_VULKAN_CreateFeature = (PFN_VULKAN_CreateFeature) GetProcAddress(dll, "NVSDK_NGX_VULKAN_CreateFeature");
-    _DLSSG_VULKAN_CreateFeature1 = (PFN_VULKAN_CreateFeature1) GetProcAddress(dll, "NVSDK_NGX_VULKAN_CreateFeature1");
-    _DLSSG_VULKAN_ReleaseFeature = (PFN_VULKAN_ReleaseFeature) GetProcAddress(dll, "NVSDK_NGX_VULKAN_ReleaseFeature");
-    _DLSSG_VULKAN_GetFeatureRequirements =
-        (PFN_VULKAN_GetFeatureRequirements) GetProcAddress(dll, "NVSDK_NGX_VULKAN_GetFeatureRequirements");
-    _DLSSG_VULKAN_EvaluateFeature =
-        (PFN_VULKAN_EvaluateFeature) GetProcAddress(dll, "NVSDK_NGX_VULKAN_EvaluateFeature");
-    _DLSSG_VULKAN_PopulateParameters_Impl =
-        (PFN_VULKAN_PopulateParameters_Impl) GetProcAddress(dll, "NVSDK_NGX_VULKAN_PopulateParameters_Impl");
+    if (populate == nullptr || populate(&params) != NVSDK_NGX_Result_Success)
+        return;
+
+    int countMax = 0;
+    if (params.Get("DLSSG.MultiFrameCountMax", &countMax) == NVSDK_NGX_Result_Success && countMax > 0)
+        reportedMaxFakeFrames = countMax;
+
+    if (params.Get("FrameInterpolation.GhostbusterVersionMajor", &antighostingVersion.major) ==
+        NVSDK_NGX_Result_Success)
+    {
+        params.Get("FrameInterpolation.GhostbusterVersionMinor", &antighostingVersion.minor);
+    }
+}
+
+void Nvngx_DllProxy::SetDispatchFlags(NVSDK_NGX_Parameter* InParameters)
+{
+    bool showDebug = Config::Instance()->NvngxFGShowDebug.value_or_default();
+    uint32_t flags = Config::Instance()->NvngxFGDispatchFlags.value_or_default();
+
+    InParameters->Set("DLSSG.ShowDebug", showDebug);
+    InParameters->Set("DLSSG.DispatchFlags", flags);
 }
 
 NVSDK_NGX_Result Nvngx_DllProxy::D3D12_Init(unsigned long long InApplicationId, const wchar_t* InApplicationDataPath,
@@ -42,7 +39,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::D3D12_Init(unsigned long long InApplicationId, 
                                             NVSDK_NGX_Version InSDKVersion)
 {
     if (isDx12Available())
-        return _DLSSG_D3D12_Init(InApplicationId, InApplicationDataPath, InDevice, InFeatureInfo, InSDKVersion);
+        return ngx.D3D12_Init(InApplicationId, InApplicationDataPath, InDevice, InFeatureInfo, InSDKVersion);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -52,21 +49,21 @@ NVSDK_NGX_Result Nvngx_DllProxy::D3D12_Init_Ext(unsigned long long InApplication
                                                 const NVSDK_NGX_FeatureCommonInfo* InFeatureInfo)
 {
     if (isDx12Available())
-        return _DLSSG_D3D12_Init_Ext(InApplicationId, InApplicationDataPath, InDevice, InSDKVersion, InFeatureInfo);
+        return ngx.D3D12_Init_Ext(InApplicationId, InApplicationDataPath, InDevice, InSDKVersion, InFeatureInfo);
     return NVSDK_NGX_Result_Fail;
 }
 
 NVSDK_NGX_Result Nvngx_DllProxy::D3D12_Shutdown()
 {
     if (isDx12Available())
-        return _DLSSG_D3D12_Shutdown();
+        return ngx.D3D12_Shutdown();
     return NVSDK_NGX_Result_Fail;
 }
 
 NVSDK_NGX_Result Nvngx_DllProxy::D3D12_Shutdown1(ID3D12Device* InDevice)
 {
     if (isDx12Available())
-        return _DLSSG_D3D12_Shutdown1(InDevice);
+        return ngx.D3D12_Shutdown1(InDevice);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -75,7 +72,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::D3D12_GetScratchBufferSize(NVSDK_NGX_Feature In
                                                             size_t* OutSizeInBytes)
 {
     if (isDx12Available())
-        return _DLSSG_D3D12_GetScratchBufferSize(InFeatureId, InParameters, OutSizeInBytes);
+        return ngx.D3D12_GetScratchBufferSize(InFeatureId, InParameters, OutSizeInBytes);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -85,7 +82,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::D3D12_CreateFeature(ID3D12GraphicsCommandList* 
 {
     if (isDx12Available())
     {
-        return _DLSSG_D3D12_CreateFeature(InCmdList, InFeatureID, InParameters, OutHandle);
+        return ngx.D3D12_CreateFeature(InCmdList, InFeatureID, InParameters, OutHandle);
     }
     return NVSDK_NGX_Result_Fail;
 }
@@ -97,7 +94,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::D3D12_ReleaseFeature(NVSDK_NGX_Handle* InHandle
         DeferredRelease::Release(depthCopy[0]);
         DeferredRelease::Release(depthCopy[1]);
 
-        return _DLSSG_D3D12_ReleaseFeature(InHandle);
+        return ngx.D3D12_ReleaseFeature(InHandle);
     }
     return NVSDK_NGX_Result_Fail;
 }
@@ -108,7 +105,7 @@ Nvngx_DllProxy::D3D12_GetFeatureRequirements(IDXGIAdapter* Adapter,
                                              NVSDK_NGX_FeatureRequirement* OutSupported)
 {
     if (isDx12Available())
-        return _DLSSG_D3D12_GetFeatureRequirements(Adapter, FeatureDiscoveryInfo, OutSupported);
+        return ngx.D3D12_GetFeatureRequirements(Adapter, FeatureDiscoveryInfo, OutSupported);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -224,13 +221,9 @@ NVSDK_NGX_Result Nvngx_DllProxy::D3D12_EvaluateFeature(ID3D12GraphicsCommandList
             DeferredRelease::Release(depthCopy[1]);
         }
 
-        bool showDebug = Config::Instance()->NvngxFGShowDebug.value_or_default();
-        uint32_t flags = Config::Instance()->NvngxFGDispatchFlags.value_or_default();
+        SetDispatchFlags(InParameters);
 
-        InParameters->Set("DLSSG.ShowDebug", showDebug);
-        InParameters->Set("DLSSG.DispatchFlags", flags);
-
-        return _DLSSG_D3D12_EvaluateFeature(InCmdList, InFeatureHandle, InParameters, InCallback);
+        return ngx.D3D12_EvaluateFeature(InCmdList, InFeatureHandle, InParameters, InCallback);
     }
 
     return NVSDK_NGX_Result_Fail;
@@ -239,7 +232,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::D3D12_EvaluateFeature(ID3D12GraphicsCommandList
 NVSDK_NGX_Result Nvngx_DllProxy::D3D12_PopulateParameters_Impl(NVSDK_NGX_Parameter* InParameters)
 {
     if (isDx12Available())
-        return _DLSSG_D3D12_PopulateParameters_Impl(InParameters);
+        return ngx.D3D12_PopulateParameters_Impl(InParameters);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -250,8 +243,8 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_Init(unsigned long long InApplicationId,
                                              NVSDK_NGX_Version InSDKVersion)
 {
     if (isVulkanAvailable())
-        return _DLSSG_VULKAN_Init(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA,
-                                  InFeatureInfo, InSDKVersion);
+        return ngx.VULKAN_Init(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA,
+                               InFeatureInfo, InSDKVersion);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -262,8 +255,8 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_Init_Ext(unsigned long long InApplicatio
                                                  const NVSDK_NGX_FeatureCommonInfo* InFeatureInfo)
 {
     if (isVulkanAvailable())
-        return _DLSSG_VULKAN_Init_Ext(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InSDKVersion,
-                                      InFeatureInfo);
+        return ngx.VULKAN_Init_Ext(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InSDKVersion,
+                                   InFeatureInfo);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -275,22 +268,22 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_Init_Ext2(unsigned long long InApplicati
                                                   const NVSDK_NGX_FeatureCommonInfo* InFeatureInfo)
 {
     if (isVulkanAvailable())
-        return _DLSSG_VULKAN_Init_Ext2(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA,
-                                       InGDPA, InSDKVersion, InFeatureInfo);
+        return ngx.VULKAN_Init_Ext2(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA,
+                                    InSDKVersion, InFeatureInfo);
     return NVSDK_NGX_Result_Fail;
 }
 
 NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_Shutdown()
 {
     if (isVulkanAvailable())
-        return _DLSSG_VULKAN_Shutdown();
+        return ngx.VULKAN_Shutdown();
     return NVSDK_NGX_Result_Fail;
 }
 
 NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_Shutdown1(VkDevice InDevice)
 {
     if (isVulkanAvailable())
-        return _DLSSG_VULKAN_Shutdown1(InDevice);
+        return ngx.VULKAN_Shutdown1(InDevice);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -299,7 +292,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_GetScratchBufferSize(NVSDK_NGX_Feature I
                                                              size_t* OutSizeInBytes)
 {
     if (isVulkanAvailable())
-        return _DLSSG_VULKAN_GetScratchBufferSize(InFeatureId, InParameters, OutSizeInBytes);
+        return ngx.VULKAN_GetScratchBufferSize(InFeatureId, InParameters, OutSizeInBytes);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -308,7 +301,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_CreateFeature(VkCommandBuffer InCmdBuffe
 {
     if (isVulkanAvailable())
     {
-        return _DLSSG_VULKAN_CreateFeature(InCmdBuffer, InFeatureID, InParameters, OutHandle);
+        return ngx.VULKAN_CreateFeature(InCmdBuffer, InFeatureID, InParameters, OutHandle);
     }
     return NVSDK_NGX_Result_Fail;
 }
@@ -319,7 +312,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_CreateFeature1(VkDevice InDevice, VkComm
 {
     if (isVulkanAvailable())
     {
-        return _DLSSG_VULKAN_CreateFeature1(InDevice, InCmdList, InFeatureID, InParameters, OutHandle);
+        return ngx.VULKAN_CreateFeature1(InDevice, InCmdList, InFeatureID, InParameters, OutHandle);
     }
     return NVSDK_NGX_Result_Fail;
 }
@@ -328,7 +321,7 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_ReleaseFeature(NVSDK_NGX_Handle* InHandl
 {
     if (isVulkanAvailable())
     {
-        return _DLSSG_VULKAN_ReleaseFeature(InHandle);
+        return ngx.VULKAN_ReleaseFeature(InHandle);
     }
     return NVSDK_NGX_Result_Fail;
 }
@@ -339,7 +332,7 @@ Nvngx_DllProxy::VULKAN_GetFeatureRequirements(const VkInstance Instance, const V
                                               NVSDK_NGX_FeatureRequirement* OutSupported)
 {
     if (isVulkanAvailable())
-        return _DLSSG_VULKAN_GetFeatureRequirements(Instance, PhysicalDevice, FeatureDiscoveryInfo, OutSupported);
+        return ngx.VULKAN_GetFeatureRequirements(Instance, PhysicalDevice, FeatureDiscoveryInfo, OutSupported);
     return NVSDK_NGX_Result_Fail;
 }
 
@@ -350,7 +343,9 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_EvaluateFeature(VkCommandBuffer InCmdLis
 {
     if (isVulkanAvailable())
     {
-        return _DLSSG_VULKAN_EvaluateFeature(InCmdList, InFeatureHandle, InParameters, InCallback);
+        SetDispatchFlags(InParameters);
+
+        return ngx.VULKAN_EvaluateFeature(InCmdList, InFeatureHandle, InParameters, InCallback);
     }
 
     return NVSDK_NGX_Result_Fail;
@@ -359,6 +354,6 @@ NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_EvaluateFeature(VkCommandBuffer InCmdLis
 NVSDK_NGX_Result Nvngx_DllProxy::VULKAN_PopulateParameters_Impl(NVSDK_NGX_Parameter* InParameters)
 {
     if (isVulkanAvailable())
-        return _DLSSG_VULKAN_PopulateParameters_Impl(InParameters);
+        return ngx.VULKAN_PopulateParameters_Impl(InParameters);
     return NVSDK_NGX_Result_Fail;
 }

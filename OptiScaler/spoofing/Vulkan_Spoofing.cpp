@@ -31,7 +31,6 @@ static PFN_vkEnumerateDeviceExtensionProperties o_vkEnumerateDeviceExtensionProp
 static PFN_vkEnumerateInstanceExtensionProperties o_vkEnumerateInstanceExtensionProperties = nullptr;
 
 static uint32_t vkEnumerateInstanceExtensionPropertiesCount = 0;
-static uint32_t vkEnumerateDeviceExtensionPropertiesCount = 0;
 static bool vkEnumerateDeviceExtensionPropertiesListed = false;
 static bool vkEnumerateInstanceExtensionPropertiesListed = false;
 
@@ -217,7 +216,7 @@ inline static void hkvkGetPhysicalDeviceMemoryProperties2(VkPhysicalDevice physi
 inline static void hkvkGetPhysicalDeviceMemoryProperties2KHR(VkPhysicalDevice physicalDevice,
                                                              VkPhysicalDeviceMemoryProperties2* pMemoryProperties)
 {
-    o_vkGetPhysicalDeviceMemoryProperties2(physicalDevice, pMemoryProperties);
+    o_vkGetPhysicalDeviceMemoryProperties2KHR(physicalDevice, pMemoryProperties);
 
     if (pMemoryProperties == nullptr ||
         pMemoryProperties->sType != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2_KHR)
@@ -249,7 +248,7 @@ inline static void hkvkGetPhysicalDeviceProperties(VkPhysicalDevice physical_dev
         targetDeviceIdMatches)
     {
         auto deviceName = wstring_to_string(Config::Instance()->SpoofedGPUName.value_or_default());
-        std::strcpy(properties->deviceName, deviceName.c_str());
+        strncpy_s(properties->deviceName, deviceName.c_str(), _TRUNCATE);
 
         properties->vendorID = Config::Instance()->SpoofedVendorId.value_or_default();
         properties->deviceID = Config::Instance()->SpoofedDeviceId.value_or_default();
@@ -278,7 +277,7 @@ inline static void hkvkGetPhysicalDeviceProperties2(VkPhysicalDevice phys_dev, V
         targetDeviceIdMatches)
     {
         auto deviceName = wstring_to_string(Config::Instance()->SpoofedGPUName.value_or_default());
-        std::strcpy(properties2->properties.deviceName, deviceName.c_str());
+        strncpy_s(properties2->properties.deviceName, deviceName.c_str(), _TRUNCATE);
         properties2->properties.vendorID = Config::Instance()->SpoofedVendorId.value_or_default();
         properties2->properties.deviceID = Config::Instance()->SpoofedDeviceId.value_or_default();
         properties2->properties.driverVersion = VK_MAKE_API_VERSION(999, 99, 0, 0);
@@ -326,7 +325,7 @@ inline static void hkvkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice phys_dev
         targetDeviceIdMatches)
     {
         auto deviceName = wstring_to_string(Config::Instance()->SpoofedGPUName.value_or_default());
-        std::strcpy(properties2->properties.deviceName, deviceName.c_str());
+        strncpy_s(properties2->properties.deviceName, deviceName.c_str(), _TRUNCATE);
         properties2->properties.vendorID = Config::Instance()->SpoofedVendorId.value_or_default();
         properties2->properties.deviceID = Config::Instance()->SpoofedDeviceId.value_or_default();
         properties2->properties.driverVersion = VK_MAKE_API_VERSION(999, 99, 0, 0);
@@ -561,6 +560,12 @@ struct VulkanDeviceFeatureState::Impl
     VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR computeShaderDerivatives {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR
     };
+    VkPhysicalDeviceShaderIntegerDotProductFeatures integerDotProduct {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES
+    };
+    VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR fifoLatestReady {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR
+    };
 
     Impl(VkDeviceCreateInfo* pCreateInfo, PFN_vkGetPhysicalDeviceFeatures2 getFeatures2)
         : pCreateInfo(pCreateInfo), getFeatures2(getFeatures2)
@@ -580,7 +585,7 @@ struct VulkanDeviceFeatureState::Impl
             CopyFeatureChain(pCreateInfo->pNext, features2, vulkan12Features, vulkan13Features, shaderFloat16Int8,
                              storage8Bit, descriptorIndexing, bufferDeviceAddress, vulkanMemoryModel, synchronization2,
                              subgroupSizeControl, timelineSemaphore, descriptorBuffer, shaderFloat8, cooperativeMatrix,
-                             cooperativeMatrix2, computeShaderDerivatives);
+                             cooperativeMatrix2, computeShaderDerivatives, integerDotProduct, fifoLatestReady);
     }
 
     bool CanUpgradeExtBufferDeviceAddress(VkPhysicalDevice physicalDevice)
@@ -769,9 +774,16 @@ struct VulkanDeviceFeatureState::Impl
                 EnableExistingFeature(modifiedFeatures, features, vulkan13Features,
                                       &VkPhysicalDeviceVulkan13Features::computeFullSubgroups,
                                       supported.computeFullSubgroups);
+                EnableExistingFeature(modifiedFeatures, features, vulkan13Features,
+                                      &VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct,
+                                      supported.shaderIntegerDotProduct);
 
                 return;
             }
+
+            EnableSupportedFeature(pCreateInfo, modifiedFeatures, integerDotProduct,
+                                   &VkPhysicalDeviceShaderIntegerDotProductFeatures::shaderIntegerDotProduct,
+                                   supported.shaderIntegerDotProduct);
 
             EnableSupportedFeature(pCreateInfo, modifiedFeatures, synchronization2,
                                    &VkPhysicalDeviceSynchronization2Features::synchronization2,
@@ -793,6 +805,11 @@ struct VulkanDeviceFeatureState::Impl
             EnableFeatureStruct(pCreateInfo, getFeatures2, physicalDevice, modifiedFeatures, subgroupSizeControl,
                                 &VkPhysicalDeviceSubgroupSizeControlFeatures::subgroupSizeControl,
                                 &VkPhysicalDeviceSubgroupSizeControlFeatures::computeFullSubgroups);
+
+        // Added for XeSS, its DP4a path and DLSSG replacements running D3D12 on Vulkan use it
+        if (HasExtension(pCreateInfo, VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME))
+            EnableFeatureStruct(pCreateInfo, getFeatures2, physicalDevice, modifiedFeatures, integerDotProduct,
+                                &VkPhysicalDeviceShaderIntegerDotProductFeatures::shaderIntegerDotProduct);
     }
 
     void EnableVulkan14Features(VkPhysicalDevice physicalDevice)
@@ -870,6 +887,11 @@ struct VulkanDeviceFeatureState::Impl
 
         if (HasExtension(pCreateInfo, VK_NV_LOW_LATENCY_2_EXTENSION_NAME))
             EnableTimelineSemaphores(physicalDevice);
+
+        if (HasExtension(pCreateInfo, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) ||
+            HasExtension(pCreateInfo, VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME))
+            EnableFeatureStruct(pCreateInfo, getFeatures2, physicalDevice, modifiedFeatures, fifoLatestReady,
+                                &VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR::presentModeFifoLatestReady);
     }
 
     void EnableFeatures(VkPhysicalDevice physicalDevice)
@@ -1028,8 +1050,9 @@ VkResult VulkanSpoofing::hkvkCreateDevice(VkPhysicalDevice physicalDevice, VkDev
             auto nvLowLatency = std::strcmp(extName, VK_NV_LOW_LATENCY_EXTENSION_NAME) == 0;
             auto nvOpticalFlow = std::strcmp(extName, VK_NV_OPTICAL_FLOW_EXTENSION_NAME) == 0;
             auto nvPresentMeter = std::strcmp(extName, VK_NV_PRESENT_METERING_EXTENSION_NAME) == 0;
+            auto pushDescriptor = std::strcmp(extName, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME) == 0;
             const bool spoofedExtension = binaryImport || imgViewHandle || bufferDeviceAddr || mvPerViewAttr ||
-                                          nvLowLatency || nvOpticalFlow || nvPresentMeter;
+                                          nvLowLatency || nvOpticalFlow || nvPresentMeter || pushDescriptor;
 
             if (spoofedExtension && supportedDeviceExtensionsValid &&
                 !SupportsExtension(supportedDeviceExtensions, extName))
@@ -1219,6 +1242,12 @@ VkResult VulkanSpoofing::hkvkCreateDevice(VkPhysicalDevice physicalDevice, VkDev
     addExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 #endif
 
+    // For the Vulkan present mode override, it can be picked after the device is created
+    if (featureState != nullptr && HasExtension(newExtensionList, VK_KHR_SWAPCHAIN_EXTENSION_NAME) &&
+        !HasExtension(newExtensionList, VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) &&
+        !addExtension(VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME))
+        addExtension(VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+
     if (State::Instance().vkAntiLagSupported)
     {
         LOG_INFO("Adding AntiLag extension");
@@ -1267,61 +1296,59 @@ inline static VkResult hkvkEnumerateDeviceExtensionProperties(VkPhysicalDevice p
         return result;
     }
 
-    if (Config::Instance()->VulkanExtensionSpoofing.value_or_default() && !SkipVulkanSpoofing())
+    if (pLayerName == nullptr && pPropertyCount != nullptr &&
+        Config::Instance()->VulkanExtensionSpoofing.value_or_default() && !SkipVulkanSpoofing())
     {
-        // Count query, modify and add 5 to final count
-        if (pProperties == nullptr && pPropertyCount != nullptr && count == 0)
-        {
-            if (State::Instance().activeFgInput == FGInput::DLSSG ||
-                State::Instance().activeFgInput == FGInput::NvngxFG)
-                *pPropertyCount += 7;
-            else
-                *pPropertyCount += 5;
+        std::vector<VkExtensionProperties> spoofed = {
+            { VK_NVX_BINARY_IMPORT_EXTENSION_NAME, VK_NVX_BINARY_IMPORT_SPEC_VERSION },
+            { VK_NVX_IMAGE_VIEW_HANDLE_EXTENSION_NAME, VK_NVX_IMAGE_VIEW_HANDLE_SPEC_VERSION },
+            { VK_NVX_MULTIVIEW_PER_VIEW_ATTRIBUTES_EXTENSION_NAME, VK_NVX_MULTIVIEW_PER_VIEW_ATTRIBUTES_SPEC_VERSION },
+            { VK_NV_LOW_LATENCY_EXTENSION_NAME, VK_NV_LOW_LATENCY_SPEC_VERSION },
+            { VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME, VK_EXT_BUFFER_DEVICE_ADDRESS_SPEC_VERSION },
+        };
 
-            vkEnumerateDeviceExtensionPropertiesCount = *pPropertyCount;
+        if (State::Instance().activeFgInput == FGInput::DLSSG || State::Instance().activeFgInput == FGInput::NvngxFG)
+        {
+            spoofed.push_back({ VK_NV_OPTICAL_FLOW_EXTENSION_NAME, VK_NV_OPTICAL_FLOW_SPEC_VERSION });
+            spoofed.push_back({ VK_NV_PRESENT_METERING_EXTENSION_NAME, VK_NV_PRESENT_METERING_SPEC_VERSION });
+        }
+
+        // Count query doesn't return the list, it's needed to skip the ones device already has
+        std::vector<VkExtensionProperties> realList;
+        auto realCount = *pPropertyCount;
+        auto real = pProperties;
+
+        if (pProperties == nullptr)
+        {
+            realList.resize(realCount);
+            o_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &realCount, realList.data());
+            real = realList.data();
+        }
+
+        std::erase_if(spoofed,
+                      [&](const VkExtensionProperties& extension)
+                      {
+                          return std::any_of(real, real + realCount, [&](const VkExtensionProperties& existing)
+                                             { return strcmp(existing.extensionName, extension.extensionName) == 0; });
+                      });
+
+        if (pProperties == nullptr)
+        {
+            *pPropertyCount += static_cast<uint32_t>(spoofed.size());
             LOG_TRACE("vkEnumerateDeviceExtensionProperties count: {}", *pPropertyCount);
             return result;
         }
 
-        // If this is request of our modified count query (count == vkEnumerateDeviceExtensionPropertiesCount)
-        if (pProperties != nullptr && pPropertyCount != nullptr && *pPropertyCount > 0 &&
-            count == vkEnumerateDeviceExtensionPropertiesCount)
+        // count is the caller's capacity
+        for (const auto& extension : spoofed)
         {
-            // Set back modified extension count
-            *pPropertyCount = count;
-
-            // And fill extension info at the end
-            VkExtensionProperties bi { VK_NVX_BINARY_IMPORT_EXTENSION_NAME, VK_NVX_BINARY_IMPORT_SPEC_VERSION };
-            memcpy(&pProperties[*pPropertyCount - 1], &bi, sizeof(VkExtensionProperties));
-
-            VkExtensionProperties ivh { VK_NVX_IMAGE_VIEW_HANDLE_EXTENSION_NAME,
-                                        VK_NVX_IMAGE_VIEW_HANDLE_SPEC_VERSION };
-            memcpy(&pProperties[*pPropertyCount - 2], &ivh, sizeof(VkExtensionProperties));
-
-            VkExtensionProperties mpva { VK_NVX_MULTIVIEW_PER_VIEW_ATTRIBUTES_EXTENSION_NAME,
-                                         VK_NVX_MULTIVIEW_PER_VIEW_ATTRIBUTES_SPEC_VERSION };
-            memcpy(&pProperties[*pPropertyCount - 3], &mpva, sizeof(VkExtensionProperties));
-
-            VkExtensionProperties ll { VK_NV_LOW_LATENCY_EXTENSION_NAME, VK_NV_LOW_LATENCY_SPEC_VERSION };
-            memcpy(&pProperties[*pPropertyCount - 4], &ll, sizeof(VkExtensionProperties));
-
-            VkExtensionProperties bda { VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-                                        VK_EXT_BUFFER_DEVICE_ADDRESS_SPEC_VERSION };
-            memcpy(&pProperties[*pPropertyCount - 5], &bda, sizeof(VkExtensionProperties));
-
-            if (State::Instance().activeFgInput == FGInput::DLSSG ||
-                State::Instance().activeFgInput == FGInput::NvngxFG)
+            if (*pPropertyCount >= count)
             {
-                VkExtensionProperties of { VK_NV_OPTICAL_FLOW_EXTENSION_NAME, VK_NV_OPTICAL_FLOW_SPEC_VERSION };
-                memcpy(&pProperties[*pPropertyCount - 6], &of, sizeof(VkExtensionProperties));
-
-                VkExtensionProperties pm { VK_NV_PRESENT_METERING_EXTENSION_NAME, VK_NV_PRESENT_METERING_SPEC_VERSION };
-                memcpy(&pProperties[*pPropertyCount - 7], &pm, sizeof(VkExtensionProperties));
+                result = VK_INCOMPLETE;
+                break;
             }
-        }
-        else
-        {
-            LOG_DEBUG("Not adding any extensions!");
+
+            pProperties[(*pPropertyCount)++] = extension;
         }
     }
 
@@ -1361,7 +1388,7 @@ inline static VkResult hkvkEnumerateInstanceExtensionProperties(const char* pLay
     {
         if (pLayerName == nullptr && pProperties == nullptr && count == 0)
         {
-            LOG_TRACE("hkvkEnumerateDeviceExtensionProperties count: {}", vkEnumerateDeviceExtensionPropertiesCount);
+            LOG_TRACE("hkvkEnumerateInstanceExtensionProperties count: {}", *pPropertyCount);
             return result;
         }
     }

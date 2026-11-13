@@ -12,6 +12,7 @@
 #include <set>
 #include <deque>
 #include <mutex>
+#include <shared_mutex>
 #include <sl_dlss_g.h>
 #include <vulkan/vulkan.h>
 #include <ankerl/unordered_dense.h>
@@ -214,6 +215,8 @@ class State
     FGNvngxReplacement activeFgNvngx = FGNvngxReplacement::None;
     std::string fgNvngxCustom;
     std::string activeFgNvngxCustom;
+    // Config::FSRFGProvider FSR FG was started with, applied after a restart
+    std::string activeFsrFgProvider;
 
     // Streamline FG inputs
     Sl_Inputs slFGInputs = {};
@@ -235,6 +238,7 @@ class State
     bool fsrfgInputActive = false;
 
     ankerl::unordered_dense::map<void*, CapturedHudlessInfo> capturedHudlesses;
+    std::mutex capturedHudlessesMutex; // Changes and the menu, lookups also rely on the hudfix check lock
     bool clearCapturedHudlesses = false;
 
     // NVNGX init parameters
@@ -242,8 +246,6 @@ class State
     std::wstring NVNGX_ApplicationDataPath;
     std::string NVNGX_ProjectId;
     NVSDK_NGX_Version NVNGX_Version {};
-    const NVSDK_NGX_FeatureCommonInfo* NVNGX_FeatureInfo = nullptr;
-    std::vector<std::wstring> NVNGX_FeatureInfo_Paths;
     NVSDK_NGX_LoggingInfo NVNGX_Logger { nullptr, NVSDK_NGX_LOGGING_LEVEL_OFF, false };
     NVSDK_NGX_EngineType NVNGX_Engine = NVSDK_NGX_ENGINE_TYPE_CUSTOM;
     std::string NVNGX_EngineVersion;
@@ -296,6 +298,13 @@ class State
     ankerl::unordered_dense::map<unsigned int, bool> changeBackend;
     Upscaler newBackend = Upscaler::Reset;
 
+    // Handles of the game's ray reconstruction, they run on a DLSSD picked by Nvngx_RR
+    ankerl::unordered_dense::set<unsigned int> rrHandles;
+
+    // The game looked for ray reconstruction: loaded Streamline's DLSSD plugin, asked NGX for its requirements
+    // or read its parameters
+    bool rrRequested = false;
+
     // XeSS debug stuff
     bool xessDebug = false;
     int xessDebugFrames = 5;
@@ -303,6 +312,12 @@ class State
     float lastMipBiasMax = -100.0f;
 
     bool WAR_xefgRequestFGToggle = false;
+
+    // Vulkan present mode override: modes the game's surface supports (bit per VulkanHooks::PresentModeBit), the
+    // mode the game asked for, and a request for the game to recreate its swapchain with the new override
+    uint32_t vkPresentModeMask = 0;
+    int vkGamePresentMode = -1;
+    bool vkPresentModeChanged = false;
 
     // XeFG Dynamic MFG with "Use target as cap": its target while it runs (0 = no cap), the FPS limit when lower
     float xefgDynamicCapFps = 0.0f;
@@ -414,13 +429,15 @@ class State
     float screenHeight = 450.0;
     bool realExclusiveFullscreen = false;
     bool SCExclusiveFullscreen = false;
+    // Requested by the swapchain being created, applied when it gets the FG swapchain
+    bool SCExclusiveFullscreenRequested = false;
     bool SCAllowTearing = false;
     UINT SCLastFlags = 0;
 
     // HDR
-    std::vector<IUnknown*> scBuffers;
     OutputColorSpace outputColorSpace {};
     bool hdrOutputActive = false;
+    bool menuTargetSrgb = false;
 
     std::optional<ApiUpscalerInput> setInputApiName;
     ApiUpscalerInput currentInputApiName;
@@ -450,9 +467,6 @@ class State
     ID3D12CommandQueue* currentCommandQueue = nullptr;
     VkDevice currentVkDevice = nullptr;
     DXGI_SWAP_CHAIN_DESC currentSwapchainDesc {};
-
-    std::vector<ID3D12Device*> d3d12Devices;
-    std::vector<ID3D11Device*> d3d11Devices;
 
     // The FG output of whichever API the game uses
     IFGFeature* CurrentFG() const
@@ -514,7 +528,7 @@ class State
         if (_serveOwner == 0 || _serveOwner == owner)
         {
             _serveOriginal = false;
-            _skipOwner = 0;
+            _serveOwner = 0;
         }
     };
 
@@ -523,7 +537,7 @@ class State
         if (_serveOwner == 0 || _serveOwner == owner)
         {
             _serveOriginal = true;
-            _skipOwner = owner;
+            _serveOwner = owner;
         }
     };
 
@@ -534,7 +548,88 @@ class State
     }
     static bool ServeOriginal() { return _serveOriginal; }
 
+    // Back buffers of the game's swapchain, read from view creation on any thread
+    bool IsSCBuffer(IUnknown* resource)
+    {
+        std::shared_lock<std::shared_mutex> lock(_scBuffersMutex);
+        return std::find(_scBuffers.begin(), _scBuffers.end(), resource) != _scBuffers.end();
+    }
+
+    void SetSCBuffers(std::vector<IUnknown*> buffers)
+    {
+        std::unique_lock<std::shared_mutex> lock(_scBuffersMutex);
+        _scBuffers = std::move(buffers);
+    }
+
+    // The game's live D3D12 devices, created and destroyed on any thread
+    void AddD3D12Device(ID3D12Device* device)
+    {
+        std::scoped_lock lock(_d3d12DevicesMutex);
+        _d3d12Devices.push_back(device);
+        _d3d12DeviceCreated = true;
+    }
+
+    void RemoveD3D12Device(IUnknown* device)
+    {
+        std::scoped_lock lock(_d3d12DevicesMutex);
+        std::erase(_d3d12Devices, device);
+    }
+
+    bool IsD3D12Device(IUnknown* device)
+    {
+        std::scoped_lock lock(_d3d12DevicesMutex);
+        return std::find(_d3d12Devices.begin(), _d3d12Devices.end(), device) != _d3d12Devices.end();
+    }
+
+    ID3D12Device* LastD3D12Device()
+    {
+        std::scoped_lock lock(_d3d12DevicesMutex);
+        return _d3d12Devices.empty() ? nullptr : _d3d12Devices.back();
+    }
+
+    // Stays set after the devices are destroyed
+    bool D3D12DeviceCreated()
+    {
+        std::scoped_lock lock(_d3d12DevicesMutex);
+        return _d3d12DeviceCreated;
+    }
+
+    // The game's D3D11 devices, removed only when the device Release hook is installed
+    void AddD3D11Device(ID3D11Device* device)
+    {
+        std::scoped_lock lock(_d3d11DevicesMutex);
+        _d3d11Devices.push_back(device);
+    }
+
+    void RemoveD3D11Device(IUnknown* device)
+    {
+        std::scoped_lock lock(_d3d11DevicesMutex);
+        std::erase(_d3d11Devices, device);
+    }
+
+    bool IsD3D11Device(IUnknown* device)
+    {
+        std::scoped_lock lock(_d3d11DevicesMutex);
+        return std::find(_d3d11Devices.begin(), _d3d11Devices.end(), device) != _d3d11Devices.end();
+    }
+
+    ID3D11Device* LastD3D11Device()
+    {
+        std::scoped_lock lock(_d3d11DevicesMutex);
+        return _d3d11Devices.empty() ? nullptr : _d3d11Devices.back();
+    }
+
   private:
+    std::vector<IUnknown*> _scBuffers;
+    std::shared_mutex _scBuffersMutex;
+
+    std::vector<ID3D12Device*> _d3d12Devices;
+    std::mutex _d3d12DevicesMutex;
+    bool _d3d12DeviceCreated = false;
+
+    std::vector<ID3D11Device*> _d3d11Devices;
+    std::mutex _d3d11DevicesMutex;
+
     inline static bool _skipChecks = false;
     inline static std::map<UINT, std::string> _skipDllName;
     inline static UINT _skipOwner = 0;

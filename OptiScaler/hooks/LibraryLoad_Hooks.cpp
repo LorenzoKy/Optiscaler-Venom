@@ -13,7 +13,7 @@
 #include <proxies/XeFG_Proxy.h>
 #include <proxies/XeLL_Proxy.h>
 #include <inputs/FG/XeFG_Inputs_Dx12.h>
-#include <proxies/NVNGX_Proxy.h>
+#include <proxies/Nvngx_Proxy.h>
 #include <proxies/FfxApi_Proxy.h>
 
 #include <inputs/FSR2_Dx12.h>
@@ -61,16 +61,10 @@ HMODULE LibraryLoadHooks::LoadLibraryCheckW(std::wstring libName, LPCWSTR lpLibF
 
     const bool pathInsideLocalSlPath = Util::IsSubpath(path, normalizedLocalSlPath);
 
-    // exe path
-    auto exePath = Util::ExePath().parent_path().wstring();
-
-    for (size_t i = 0; i < exePath.size(); i++)
-        exePath[i] = std::tolower(exePath[i]);
-
-    auto pos = libName.rfind(exePath);
+    const bool pathInsideExePath = Util::IsSubpath(path, Util::ExePath().parent_path());
 
     if (Config::Instance()->EnableDlssInputs.value_or_default() && CheckDllNameW(&libName, &nvngxNamesW) &&
-        (!Config::Instance()->HookOriginalNvngxOnly.value_or_default() || pos == std::string::npos))
+        (!Config::Instance()->HookOriginalNvngxOnly.value_or_default() || !pathInsideExePath))
     {
         LOG_INFO("nvngx call: {0}, returning this dll!", libNameA);
 
@@ -134,7 +128,7 @@ HMODULE LibraryLoadHooks::LoadLibraryCheckW(std::wstring libName, LPCWSTR lpLibF
     {
         LOG_INFO("{} call!", libNameA);
 
-        return LibraryLoadHooks::LoadNvApi();
+        return LibraryLoadHooks::LoadNvApi(lpLibFullPath);
     }
 
     // Hook SL from local path if using Nvngx FG (and probably upgrading SL for it)
@@ -178,6 +172,22 @@ HMODULE LibraryLoadHooks::LoadLibraryCheckW(std::wstring libName, LPCWSTR lpLibF
         }
 
         return dlssModule;
+    }
+
+    // sl.dlss_d.dll
+    if (shouldHookSl && (CheckDllNameW(&libName, &slDlssdNamesW) ||
+                         (normalizedPath.contains(L"\\versions\\") && normalizedPath.contains(L"\\sl_dlss_d_"))))
+    {
+        auto dlssdModule = NtdllProxy::LoadLibraryExW_Ldr(lpLibFullPath, NULL, 0);
+
+        std::scoped_lock lock(StreamlineHooks::mutexHookDlssd);
+
+        if (dlssdModule != nullptr)
+            StreamlineHooks::hookDlssd(dlssdModule);
+        else
+            LOG_ERROR("Trying to load dll as sl.dlss_d: {}", libNameA);
+
+        return dlssdModule;
     }
 
     // sl.dlss_g.dll
@@ -315,7 +325,7 @@ HMODULE LibraryLoadHooks::LoadLibraryCheckW(std::wstring libName, LPCWSTR lpLibF
                 IDXGIFactory1* factory1 = nullptr;
                 IDXGIFactory2* factory2 = nullptr;
 
-                auto ocResult = DxgiProxy::CreateDxgiFactory_()(__uuidof(factory), &factory);
+                auto ocResult = DxgiProxy::CreateDxgiFactory_Hooked()(__uuidof(factory), &factory);
                 LOG_DEBUG("CreateDxgiFactory result: {:X}", ocResult);
 
                 if (ocResult == S_OK && factory != nullptr)
@@ -325,7 +335,7 @@ HMODULE LibraryLoadHooks::LoadLibraryCheckW(std::wstring libName, LPCWSTR lpLibF
                     factory->Release();
                 }
 
-                ocResult = DxgiProxy::CreateDxgiFactory1_()(__uuidof(factory1), &factory1);
+                ocResult = DxgiProxy::CreateDxgiFactory1_Hooked()(__uuidof(factory1), &factory1);
                 LOG_DEBUG("CreateDxgiFactory1 result: {:X}", ocResult);
 
                 if (ocResult == S_OK && factory1 != nullptr)
@@ -334,7 +344,7 @@ HMODULE LibraryLoadHooks::LoadLibraryCheckW(std::wstring libName, LPCWSTR lpLibF
                     factory1->Release();
                 }
 
-                ocResult = DxgiProxy::CreateDxgiFactory2_()(0, __uuidof(factory2), &factory2);
+                ocResult = DxgiProxy::CreateDxgiFactory2_Hooked()(0, __uuidof(factory2), &factory2);
                 LOG_DEBUG("CreateDxgiFactory2 result: {:X}", ocResult);
 
                 if (ocResult == S_OK && factory2 != nullptr)
@@ -398,7 +408,7 @@ HMODULE LibraryLoadHooks::LoadLibraryCheckW(std::wstring libName, LPCWSTR lpLibF
 
     if (!State::Instance().skipDxgiLoadChecks && CheckDllNameW(&libName, &dxgiNamesW))
     {
-        auto module = NtdllProxy::LoadLibraryExW_Ldr(libName.c_str(), NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        auto module = NtdllProxy::LoadLibraryExW_Ldr(libName.c_str(), NULL, 0);
 
         if (module != nullptr)
         {
@@ -834,15 +844,19 @@ void LibraryLoadHooks::AfterLoadLibrary(HMODULE library)
     }
 }
 
-HMODULE LibraryLoadHooks::LoadNvApi()
+HMODULE LibraryLoadHooks::LoadNvApi(LPCWSTR requestedName)
 {
     LOG_FUNC();
 
     HMODULE nvapi = nullptr;
 
-    // Opti exports a query function that nvapi would export
-    if (Config::Instance()->UseFakenvapi.value_or_default() &&
-        IdentifyGpu::getPrimaryGpu().vendorId != VendorId::Nvidia)
+    // Opti exports a query function that nvapi would export.
+    // Vendor is unknown when detection fails, then the real nvapi is used if it can be loaded.
+    // While detecting it's only unknown when the startup check found no Nvidia GPU.
+    const auto vendorId = IdentifyGpu::getPrimaryGpu().vendorId;
+    const bool vendorKnown = vendorId != VendorId::Invalid || IdentifyGpu::isDetecting();
+
+    if (Config::Instance()->UseFakenvapi.value_or_default() && vendorId != VendorId::Nvidia && vendorKnown)
     {
         nvapi = dllModule;
         fakenvapi::setUsingAsMainNvapi(true);
@@ -851,14 +865,14 @@ HMODULE LibraryLoadHooks::LoadNvApi()
             LOG_WARN("nvapi64.dll is loaded when Nvidia is not the primary GPU");
     }
 
-    // Try to load nvapi only from system32, like the original call would
+    // Same name and search order as the original call, a requested full path stays full
     if (nvapi == nullptr)
-        nvapi = NtdllProxy::LoadLibraryExW_Ldr(L"nvapi64.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        nvapi = NtdllProxy::LoadLibraryExW_Ldr(requestedName, NULL, 0);
 
-    // Fallback for Nvidia, doubt it's helpful
+    // Fallback for Nvidia and unknown vendors
     if (Config::Instance()->UseFakenvapi.value_or_default() && nvapi == nullptr)
     {
-        LOG_WARN("Using fakenvapi on Nvidia as the main nvapi");
+        LOG_WARN("Real nvapi can't be loaded, using fakenvapi as the main nvapi");
         nvapi = dllModule;
         fakenvapi::setUsingAsMainNvapi(true);
     }
@@ -1125,6 +1139,19 @@ void LibraryLoadHooks::CheckModulesInMemory()
             {
                 LOG_DEBUG("sl.dlss.dll already in memory");
                 StreamlineHooks::hookDlss(slDlss);
+            }
+        }
+    }
+
+    {
+        std::unique_lock lock(StreamlineHooks::mutexHookDlssd, std::try_to_lock);
+        if (lock.owns_lock() && !StreamlineHooks::isDlssdHooked())
+        {
+            HMODULE slDlssd = GetDllNameWModule(&slDlssdNamesW);
+            if (slDlssd != nullptr)
+            {
+                LOG_DEBUG("sl.dlss_d.dll already in memory");
+                StreamlineHooks::hookDlssd(slDlssd);
             }
         }
     }

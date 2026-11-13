@@ -10,7 +10,8 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream | |
 | --- | --- | --- | --- |
-| [**v0.3**](#v03) · [`opti-venom-v0.3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3) | 2026-11-01 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) | Latest |
+| [**v0.3.1**](#v031) · [`opti-venom-v0.3.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3.1) | 2026-11-13 | [nightly-20261112](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261112) = [`74ae2c65`](https://github.com/optiscaler/OptiScaler/commit/74ae2c650dd6d59f4dbd999636e7c74b478a29d8) (2026-11-12) | Latest |
+| [v0.3](#v03) · [`opti-venom-v0.3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3) | 2026-11-01 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) |  |
 | [v0.2.1](#v021) · [`opti-venom-v0.2.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2.1) | 2026-10-31 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) |  |
 | [v0.2](#v02) · [`opti-venom-v0.2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2) | 2026-10-25 | [nightly-20261025](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261025) = [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) |  |
 | [v0.2 beta 4](#v02-beta-4) · [`opti-venom-v0.2-beta4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4) | 2026-10-25 | [`3c6263ec`](https://github.com/optiscaler/OptiScaler/commit/3c6263ec815fd50c09821cbfcf1411d77cb99396) (2026-10-25) | |
@@ -22,6 +23,33 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.3.1
+
+> OptiScaler `10.0.0.1` (development build after `v0.9.4`), built on the latest official nightly [nightly-20261112](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261112) = upstream `master` [`74ae2c65`](https://github.com/optiscaler/OptiScaler/commit/74ae2c650dd6d59f4dbd999636e7c74b478a29d8). v0.3 plus everything upstream added since 2026-10-29.
+
+### Changed
+- Venom itself is the same as v0.3: no new OSD rows or options, no new ini keys.
+- The upstream commits after nightly-20261112 are not in v0.3.1: they come back with the next official nightly. Venom nightlies have them.
+
+### From upstream (nightly-20261112)
+- Plugins (ASI): custom providers, loaded at the exe entry again, plugin API additions (`ReInitUpscalers`, `ComboEx`, `ItemDeactivatedAfterEdit`).
+- Custom DLSSD, DLSSD as ray reconstruction input, an upscaler in place of DLSSD in select games; option to write dumps on crashes; hudless flip option.
+- Vulkan: V-Sync override, swapchain recreated on suboptimal presents, DLSSG workarounds and Enabler support, shutdown crash and FG sync fixes.
+- Input: XInput, DirectInput and raw input hooks reworked (no stuck keys, no keys leaking to the game while the menu has input).
+- Compatibility: ReShade, Special K and Luma, Anti Lag 2 proxy device, FSR 4 kept off non-AMD GPUs unless `Fsr4GpuSupport`.
+- Many stability fixes (swapchain resize, D3D11 FG interop, device lifetimes, NGX, low latency).
+
+### Upgrading
+- Nothing to do: ini files and settings codes keep working.
+
+### Who to ask
+
+| Change | From | Ask |
+| --- | --- | --- |
+| HDR menu and OSD, Venom presets, XeFG time, CPU sensor notes (as v0.3) | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG in Vulkan games | **dashdogy** | [dashdogy](https://github.com/dashdogy) on [PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240) |
+| Everything else | **Upstream** nightly-20261112 `74ae2c65` | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.3
 

@@ -142,6 +142,7 @@ class StreamlineHooks
     static void updateDlssgOptions();
 
     static void unhookInterposer();
+    static void forgetInterposer();
     static void hookInterposer(HMODULE slInterposer);
     static inline HMODULE hookedInterposerModule = nullptr;
 
@@ -177,6 +178,11 @@ class StreamlineHooks
     static inline std::mutex mutexHookPcl;
     static inline HMODULE hookedPclModule = nullptr;
 
+    static void unhookDlssd();
+    static void hookDlssd(HMODULE slDlssd);
+    static inline std::mutex mutexHookDlssd;
+    static inline HMODULE hookedDlssdModule = nullptr;
+
     static void unhookCommon();
     static void hookCommon(HMODULE slCommon);
     static inline std::mutex mutexHookCommon;
@@ -193,6 +199,7 @@ class StreamlineHooks
     static bool isCommonHooked();
     static bool isPclHooked();
     static bool isReflexHooked();
+    static bool isDlssdHooked();
 
   private:
     enum class SlPlugin : size_t
@@ -203,6 +210,7 @@ class StreamlineHooks
         Reflex,
         Pcl,
         Common,
+        Dlssd,
         Count
     };
 
@@ -222,6 +230,11 @@ class StreamlineHooks
     };
 
     inline static PluginHookSlot pluginSlots[(size_t) SlPlugin::Count][kMaxPluginInstances];
+
+    // Hooked slInit export, its image and bytes, a fresh image at the same address doesn't have the patch
+    inline static void* hookedInterposerInit = nullptr;
+    inline static std::wstring hookedInterposerPath;
+    inline static uint8_t hookedInterposerPatch[kPatchBytes] {};
 
     static const char* pluginName(SlPlugin plugin);
     static std::mutex& pluginMutex(SlPlugin plugin);
@@ -319,6 +332,12 @@ class StreamlineHooks
     static sl::Result hkslDLSSGetOptimalSettings(const sl::DLSSOptions& options, sl::DLSSOptimalSettings& settings);
     static void* hkdlss_slGetPluginFunction(PFN_slGetPluginFunction original, const char* functionName, void* caller);
 
+    // DLSSD
+    inline static PFN_slOnPluginLoad o_dlssd_slOnPluginLoad = nullptr;
+
+    static bool hkdlssd_slOnPluginLoad(sl::param::IParameters* params, const char* loaderJSON, const char** pluginJSON);
+    static void* hkdlssd_slGetPluginFunction(PFN_slGetPluginFunction original, const char* functionName, void* caller);
+
     // DLSSG
     inline static PFN_slOnPluginLoad o_dlssg_slOnPluginLoad = nullptr;
     inline static PFN_slGetPluginJSONConfig_sl1 o_dlssg_slGetPluginJSONConfig_sl1 = nullptr;
@@ -346,6 +365,7 @@ class StreamlineHooks
 
     // Reflex
     inline static sl::ReflexMode reflexGamesLastMode = sl::ReflexMode::eOff;
+    inline static sl::ReflexOptions reflexGamesLastOptions {};
     inline static PFN_slSetConstants_sl1 o_reflex_slSetConstants_sl1 = nullptr;
     inline static PFN_slOnPluginLoad o_reflex_slOnPluginLoad = nullptr;
     inline static decltype(&slReflexSetOptions) o_slReflexSetOptions = nullptr;
@@ -395,6 +415,7 @@ class StreamlineHooks
     VALIDATE_MEMBER_HOOK(hkslGetNativeInterface, decltype(&slGetNativeInterface))
     VALIDATE_MEMBER_HOOK(hkslSetD3DDevice, decltype(&slSetD3DDevice))
     VALIDATE_MEMBER_HOOK(hkdlss_slOnPluginLoad, PFN_slOnPluginLoad)
+    VALIDATE_MEMBER_HOOK(hkdlssd_slOnPluginLoad, PFN_slOnPluginLoad)
     VALIDATE_MEMBER_HOOK(hkslDLSSGetOptimalSettings, decltype(&slDLSSGetOptimalSettings))
     VALIDATE_MEMBER_HOOK(hkdlssg_slOnPluginLoad, PFN_slOnPluginLoad)
     VALIDATE_MEMBER_HOOK(hkslSetConstants, decltype(&slSetConstants))

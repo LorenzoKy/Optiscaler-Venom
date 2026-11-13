@@ -12,6 +12,7 @@ struct Nvngx_FFX_Api
     PfnFfxConfigure Configure;
     PfnFfxQuery Query;
     PfnFfxDispatch Dispatch;
+    ffxReturnCode_t (*QueryFgVersions)(void* device, std::vector<uint64_t>& ids, std::vector<const char*>& names);
     FfxApiResource (*GetResource)(NVSDK_NGX_Parameter* InParameters, const char* name, uint32_t state);
     void (*CopyTexture)(void* cmdList, const FfxApiResource* Destination, const FfxApiResource* Source);
 };
@@ -23,7 +24,8 @@ struct ffxContext_wrap
 
     ~ffxContext_wrap()
     {
-        if (!ctx)
+        // Delayed destroys can run while the process exits
+        if (!ctx || State::Instance().isShuttingDown)
             return;
 
         auto retCode = destroy(&ctx, nullptr);
@@ -52,6 +54,15 @@ struct Nvngx_FFX_Handle
     bool hdrRangeSet = false;
     float hdrMinLuminance = 0.0001f;
     float hdrMaxLuminance = 1000.0f;
+
+    ~Nvngx_FFX_Handle()
+    {
+        // Context uses the device, it goes first
+        fgContext.reset();
+
+        if (device && !State::Instance().isShuttingDown)
+            device->Release();
+    }
 };
 
 class Nvngx_FFX : public IFGNvngx

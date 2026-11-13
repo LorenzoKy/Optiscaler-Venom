@@ -16,6 +16,7 @@
 #include <atomic>
 #include <cstring>
 #include <misc/IdentifyGpu.h>
+#include <framegen/nvngx/NvngxVkLayouts.h>
 
 static PFN_vkQueueSubmit o_vkQueueSubmit = nullptr;
 static PFN_vkQueueSubmit2 o_vkQueueSubmit2 = nullptr;
@@ -32,6 +33,8 @@ static PFN_vkCreateCommandPool o_vkCreateCommandPool = nullptr;
 
 static std::mutex mutexCommandPoolToQueueFamilyMap;
 static std::unordered_map<VkCommandPool, uint32_t> commandPoolToQueueFamilyMap;
+
+static PFN_vkDestroyImage o_vkDestroyImage = nullptr;
 
 // #define LOG_ALL_RECORDS
 
@@ -1056,6 +1059,9 @@ void Vulkan_wDx12::hk_vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipe
                                            uint32_t imageMemoryBarrierCount,
                                            const VkImageMemoryBarrier* pImageMemoryBarriers)
 {
+    std::vector<VkImageMemoryBarrier> fixedBarriers;
+    pImageMemoryBarriers = NvngxVkLayouts::Fixup(pImageMemoryBarriers, imageMemoryBarrierCount, fixedBarriers);
+
     auto primaryGpu = IdentifyGpu::getPrimaryGpu();
     if (State::Instance().gameQuirks & GameQuirk::VulkanDLSSBarrierFixup &&
         (primaryGpu.vendorId != VendorId::Nvidia || !primaryGpu.dlssCapable))
@@ -1128,6 +1134,12 @@ void Vulkan_wDx12::hk_vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipe
     o_vkCmdPipelineBarrier(cmdBuffer, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers,
                            bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount,
                            pImageMemoryBarriers);
+}
+
+void Vulkan_wDx12::hk_vkDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks* pAllocator)
+{
+    NvngxVkLayouts::Forget(image);
+    o_vkDestroyImage(device, image, pAllocator);
 }
 
 void Vulkan_wDx12::hk_vkCmdBeginQuery(VkCommandBuffer commandBuffer, VkQueryPool queryPool, uint32_t query,
@@ -1560,6 +1572,10 @@ void Vulkan_wDx12::hk_vkCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t e
 
 void Vulkan_wDx12::hk_vkCmdPipelineBarrier2(VkCommandBuffer commandBuffer, const VkDependencyInfo* pDependencyInfo)
 {
+    std::vector<VkImageMemoryBarrier2> fixedBarriers;
+    VkDependencyInfo fixedInfo;
+    pDependencyInfo = NvngxVkLayouts::Fixup(pDependencyInfo, fixedInfo, fixedBarriers);
+
     VkCommandBuffer cmdBuffer = commandBuffer;
 
     auto mappedVirtualCmdBuffer = GetVirtualCommandBuffer(cmdBuffer);
@@ -2778,6 +2794,10 @@ void Vulkan_wDx12::hk_vkCmdWaitEvents2KHR(VkCommandBuffer commandBuffer, uint32_
 
 void Vulkan_wDx12::hk_vkCmdPipelineBarrier2KHR(VkCommandBuffer commandBuffer, const VkDependencyInfo* pDependencyInfo)
 {
+    std::vector<VkImageMemoryBarrier2> fixedBarriers;
+    VkDependencyInfo fixedInfo;
+    pDependencyInfo = NvngxVkLayouts::Fixup(pDependencyInfo, fixedInfo, fixedBarriers);
+
     VkCommandBuffer cmdBuffer = commandBuffer;
 
     auto mappedVirtualCmdBuffer = GetVirtualCommandBuffer(cmdBuffer);
@@ -6132,6 +6152,7 @@ bool Vulkan_wDx12::RegisterPendingSubmission(const PendingSubmission& submission
     }
 
     pendingSubmissions.emplace(submission.submitCommandBuffer, submission);
+    pendingSubmissionCount = pendingSubmissions.size();
     return true;
 }
 
@@ -6142,10 +6163,15 @@ void Vulkan_wDx12::CancelPendingSubmission(VkCommandBuffer commandBuffer)
 
     std::scoped_lock lock(pendingSubmissionMutex);
     pendingSubmissions.erase(commandBuffer);
+    pendingSubmissionCount = pendingSubmissions.size();
 }
 
 bool Vulkan_wDx12::TakePendingSubmission(VkCommandBuffer commandBuffer, PendingSubmission& submission)
 {
+    // Called for every submitted, begun and reset command buffer
+    if (pendingSubmissionCount == 0)
+        return false;
+
     std::scoped_lock lock(pendingSubmissionMutex);
     auto it = pendingSubmissions.find(commandBuffer);
     if (it == pendingSubmissions.end())
@@ -6153,13 +6179,19 @@ bool Vulkan_wDx12::TakePendingSubmission(VkCommandBuffer commandBuffer, PendingS
 
     submission = it->second;
     pendingSubmissions.erase(it);
+    pendingSubmissionCount = pendingSubmissions.size();
     return true;
 }
 
 static void AbortPendingD3D12Wait(const Vulkan_wDx12::PendingSubmission& pending, const char* reason)
 {
+    // Signaled already, signaling again can move the fence back
+    if (pending.aborted)
+        return;
+
     bool logAbort = true;
-    if (reason != nullptr && std::strcmp(reason, "unsupported legacy VkSubmitInfo pNext chain") == 0)
+    if (reason != nullptr && (std::strcmp(reason, "unsupported legacy VkSubmitInfo pNext chain") == 0 ||
+                              std::strcmp(reason, "unsupported VkSubmitInfo2 pNext chain") == 0))
     {
         static std::atomic<uint32_t> unsupportedCount { 0 };
         const uint32_t count = unsupportedCount.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -6178,6 +6210,57 @@ static void AbortPendingD3D12Wait(const Vulkan_wDx12::PendingSubmission& pending
         LOG_ERROR("Failed to release aborted Vulkan w/Dx12 D3D12 wait: {0:x}", result);
 }
 
+// Copies of submit extensions not tied to the batch's semaphores or command buffers, carried by every split part
+struct SubmitPassThrough
+{
+    VkPerformanceQuerySubmitInfoKHR performanceQuery {};
+    VkLatencySubmissionPresentIdNV latency {};
+    VkFrameBoundaryEXT frameBoundary {};
+    const void* chain = nullptr;
+
+    SubmitPassThrough() = default;
+    SubmitPassThrough(const SubmitPassThrough&) = delete;
+
+    bool Add(const VkBaseInStructure* node)
+    {
+        switch (node->sType)
+        {
+        case VK_STRUCTURE_TYPE_PERFORMANCE_QUERY_SUBMIT_INFO_KHR:
+            return Link(performanceQuery, node);
+        case VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV:
+            return Link(latency, node);
+        case VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT:
+            return Link(frameBoundary, node);
+        default:
+            return false;
+        }
+    }
+
+    bool AddChain(const void* pNext)
+    {
+        for (auto* node = reinterpret_cast<const VkBaseInStructure*>(pNext); node != nullptr; node = node->pNext)
+        {
+            if (!Add(node))
+                return false;
+        }
+
+        return true;
+    }
+
+  private:
+    template <typename T> bool Link(T& copy, const VkBaseInStructure* node)
+    {
+        // Already added
+        if (copy.sType != 0)
+            return false;
+
+        copy = *reinterpret_cast<const T*>(node);
+        copy.pNext = chain;
+        chain = &copy;
+        return true;
+    }
+};
+
 // The legacy submit can contain several valid, independently-owned pNext nodes. Never mutate the application's
 // chain. The split submits below rebuild their own timeline metadata and can omit extensions ONLY if the omission
 // is semantically equivalent. Unknown or nontrivial extensions must remain fail-closed.
@@ -6190,7 +6273,7 @@ struct LegacyPNextInspection
     explicit operator bool() const { return reason == nullptr; }
 };
 
-static LegacyPNextInspection InspectLegacySubmitPNext(const VkSubmitInfo& submit)
+static LegacyPNextInspection InspectLegacySubmitPNext(const VkSubmitInfo& submit, SubmitPassThrough& passThrough)
 {
     LegacyPNextInspection result {};
     uint32_t chainLength = 0;
@@ -6251,7 +6334,9 @@ static LegacyPNextInspection InspectLegacySubmitPNext(const VkSubmitInfo& submit
         }
 
         default:
-            return Reject("unsupported VkSubmitInfo extension");
+            if (!passThrough.Add(node))
+                return Reject("unsupported VkSubmitInfo extension");
+            break;
         }
     }
     return result;
@@ -6283,12 +6368,157 @@ static void AbortPendingD3D12Waits(const PendingInterop* interops, size_t count,
         AbortPendingD3D12Wait(interops[i].pending, reason);
 }
 
+// The recorded upscale won't be submitted anymore
+void Vulkan_wDx12::DiscardPendingInterop(VkCommandBuffer commandBuffer)
+{
+    PendingSubmission pending {};
+    if (!TakePendingSubmission(commandBuffer, pending))
+        return;
+
+    AbortPendingD3D12Wait(pending, "command buffer discarded before submit");
+
+    // Redirect target is left recording, it's reset before its next use
+    RemoveVirtualCommandBuffer(commandBuffer);
+}
+
+size_t Vulkan_wDx12::AbortPendingSubmissions(ID3D12Fence* resourceCopyFence)
+{
+    if (resourceCopyFence == nullptr)
+        return 0;
+
+    std::vector<PendingSubmission> aborted;
+    {
+        std::scoped_lock lock(pendingSubmissionMutex);
+        for (auto& [commandBuffer, pending] : pendingSubmissions)
+        {
+            if (pending.resourceCopyFence != resourceCopyFence || pending.aborted)
+                continue;
+
+            aborted.push_back(pending);
+            pending.aborted = true;
+        }
+    }
+
+    for (const auto& pending : aborted)
+        AbortPendingD3D12Wait(pending, "upscale wasn't submitted");
+
+    return aborted.size();
+}
+
+void Vulkan_wDx12::DropPendingSubmissions(VkCommandBuffer barrierCommandBuffer)
+{
+    if (pendingSubmissionCount == 0)
+        return;
+
+    std::vector<PendingSubmission> dropped;
+    {
+        std::scoped_lock lock(pendingSubmissionMutex);
+        for (auto it = pendingSubmissions.begin(); it != pendingSubmissions.end();)
+        {
+            if (it->second.barrierCommandBuffer != barrierCommandBuffer)
+            {
+                ++it;
+                continue;
+            }
+
+            dropped.push_back(it->second);
+            it = pendingSubmissions.erase(it);
+        }
+
+        pendingSubmissionCount = pendingSubmissions.size();
+    }
+
+    for (const auto& pending : dropped)
+    {
+        AbortPendingD3D12Wait(pending, "redirect command buffer is reused");
+
+        if (GetVirtualCommandBuffer(pending.submitCommandBuffer) == pending.barrierCommandBuffer)
+            RemoveVirtualCommandBuffer(pending.submitCommandBuffer);
+    }
+
+    if (!dropped.empty())
+        LOG_WARN("Dropped {} unsubmitted upscales, their commands recorded after Evaluate are lost", dropped.size());
+}
+
+static bool HasAbortedInterop(const PendingInterop* interops, size_t count)
+{
+    for (size_t i = 0; i < count; i++)
+    {
+        if (interops[i].pending.aborted)
+            return true;
+    }
+
+    return false;
+}
+
+// Device group masks are per command buffer, only a leading device group can be replaced by a copy.
+// Protected submits only take protected command buffers
+static bool CanAddCommandBuffers(const VkSubmitInfo& submit)
+{
+    for (auto* node = reinterpret_cast<const VkBaseInStructure*>(submit.pNext); node != nullptr; node = node->pNext)
+    {
+        if (node->sType == VK_STRUCTURE_TYPE_DEVICE_GROUP_SUBMIT_INFO && node != submit.pNext)
+            return false;
+
+        if (node->sType == VK_STRUCTURE_TYPE_PROTECTED_SUBMIT_INFO &&
+            reinterpret_cast<const VkProtectedSubmitInfo*>(node)->protectedSubmit != VK_FALSE)
+            return false;
+    }
+
+    return true;
+}
+
+// Keeps the application's submit, only adds the commands recorded after Evaluate. Upscale output is dropped
+static void AppendUnsplitLegacySubmit(const VkSubmitInfo& original, const PendingInterop* interops, size_t interopCount,
+                                      std::deque<LegacySplitSubmit>& storage, std::vector<VkSubmitInfo>& out)
+{
+    auto& copy = storage.emplace_back();
+
+    auto group = reinterpret_cast<const VkDeviceGroupSubmitInfo*>(original.pNext);
+    if (group != nullptr && group->sType != VK_STRUCTURE_TYPE_DEVICE_GROUP_SUBMIT_INFO)
+        group = nullptr;
+
+    size_t next = 0;
+    for (uint32_t i = 0; i < original.commandBufferCount; i++)
+    {
+        copy.commandBuffers.push_back(original.pCommandBuffers[i]);
+
+        // Added command buffers run on the devices of the upscale's command buffer
+        uint32_t mask = 1;
+        if (group != nullptr && i < group->commandBufferCount && group->pCommandBufferDeviceMasks != nullptr)
+            mask = group->pCommandBufferDeviceMasks[i];
+
+        copy.deviceMasks.push_back(mask);
+
+        if (next < interopCount && interops[next].commandBufferIndex == i)
+        {
+            copy.commandBuffers.push_back(interops[next].pending.barrierCommandBuffer);
+            copy.deviceMasks.push_back(mask);
+            next++;
+        }
+    }
+
+    copy.submit = original;
+    copy.submit.commandBufferCount = static_cast<uint32_t>(copy.commandBuffers.size());
+    copy.submit.pCommandBuffers = copy.commandBuffers.data();
+
+    if (group != nullptr)
+    {
+        copy.deviceGroup = *group;
+        copy.deviceGroup.commandBufferCount = copy.submit.commandBufferCount;
+        copy.deviceGroup.pCommandBufferDeviceMasks = copy.deviceMasks.data();
+        copy.submit.pNext = &copy.deviceGroup;
+    }
+
+    out.push_back(copy.submit);
+}
+
 // Splits one application VkSubmitInfo at every pending Evaluate command buffer:
 //   [app waits] cmds..Evaluate0 -> resourceCopy0 | copyBack0 | barrier0 cmds..Evaluate1 -> resourceCopy1 | copyBack1 |
 //   ... | barrierN rest -> [app signals]
 // Timeline values are copied, the application's pNext chain is never modified.
 static void AppendLegacyInteropSubmits(const VkSubmitInfo& original,
-                                       const VkTimelineSemaphoreSubmitInfo* originalTimeline,
+                                       const VkTimelineSemaphoreSubmitInfo* originalTimeline, const void* passThrough,
                                        const PendingInterop* interops, size_t interopCount,
                                        std::deque<LegacySplitSubmit>& storage, std::vector<VkSubmitInfo>& out)
 {
@@ -6323,6 +6553,7 @@ static void AppendLegacyInteropSubmits(const VkSubmitInfo& original,
             segment.commandBuffers.push_back(original.pCommandBuffers[nextCommandBuffer]);
 
         segment.AddSignal(pending.resourceCopySemaphore, pending.resourceCopyValue);
+        segment.timeline.pNext = passThrough;
         out.push_back(segment.Finalize());
 
         auto& copyBack = storage.emplace_back();
@@ -6350,6 +6581,7 @@ static void AppendLegacyInteropSubmits(const VkSubmitInfo& original,
         tail.AddSignal(original.pSignalSemaphores[i], value);
     }
 
+    tail.timeline.pNext = passThrough;
     out.push_back(tail.Finalize());
 }
 
@@ -6385,6 +6617,7 @@ VkResult Vulkan_wDx12::hk_vkQueueSubmit(VkQueue queue, uint32_t submitCount, con
         return o_vkQueueSubmit(queue, submitCount, pSubmits, fence);
 
     std::deque<LegacySplitSubmit> storage;
+    std::deque<SubmitPassThrough> passThroughs;
     std::vector<VkSubmitInfo> finalSubmits;
     finalSubmits.reserve(submitCount + interops.size() * 2);
     std::vector<PendingInterop> injected;
@@ -6404,18 +6637,28 @@ VkResult Vulkan_wDx12::hk_vkQueueSubmit(VkQueue queue, uint32_t submitCount, con
 
         // Inspect every node before splitting. Timeline values are cloned; single-device (device 0) group metadata
         // and an explicitly unprotected submit have exactly the same meaning when omitted from our split submits.
-        const auto extensionInfo = InspectLegacySubmitPNext(pSubmits[i]);
-        if (!extensionInfo)
+        auto& passThrough = passThroughs.emplace_back();
+        const auto extensionInfo = InspectLegacySubmitPNext(pSubmits[i], passThrough);
+        const bool aborted = HasAbortedInterop(interops.data() + first, next - first);
+        if (!extensionInfo || aborted)
         {
-            ReportRejectedLegacyPNext(pSubmits[i], extensionInfo);
+            if (!extensionInfo)
+                ReportRejectedLegacyPNext(pSubmits[i], extensionInfo);
+
             AbortPendingD3D12Waits(interops.data() + first, next - first,
-                                   "unsupported legacy VkSubmitInfo pNext chain");
-            finalSubmits.push_back(pSubmits[i]);
+                                   aborted ? "upscale wasn't submitted in time"
+                                           : "unsupported legacy VkSubmitInfo pNext chain");
+
+            if (CanAddCommandBuffers(pSubmits[i]))
+                AppendUnsplitLegacySubmit(pSubmits[i], interops.data() + first, next - first, storage, finalSubmits);
+            else
+                finalSubmits.push_back(pSubmits[i]);
+
             continue;
         }
 
-        AppendLegacyInteropSubmits(pSubmits[i], extensionInfo.timeline, interops.data() + first, next - first, storage,
-                                   finalSubmits);
+        AppendLegacyInteropSubmits(pSubmits[i], extensionInfo.timeline, passThrough.chain, interops.data() + first,
+                                   next - first, storage, finalSubmits);
 
         for (size_t k = first; k < next; k++)
         {
@@ -6436,9 +6679,9 @@ VkResult Vulkan_wDx12::hk_vkQueueSubmit(VkQueue queue, uint32_t submitCount, con
 }
 
 // Same split layout as AppendLegacyInteropSubmits.
-static void AppendSubmit2InteropSubmits(const VkSubmitInfo2& original, const PendingInterop* interops,
-                                        size_t interopCount, std::deque<Submit2SplitSubmit>& storage,
-                                        std::vector<VkSubmitInfo2>& out)
+static void AppendSubmit2InteropSubmits(const VkSubmitInfo2& original, const void* passThrough,
+                                        const PendingInterop* interops, size_t interopCount,
+                                        std::deque<Submit2SplitSubmit>& storage, std::vector<VkSubmitInfo2>& out)
 {
     uint32_t nextCommandBuffer = 0;
 
@@ -6463,6 +6706,7 @@ static void AppendSubmit2InteropSubmits(const VkSubmitInfo2& original, const Pen
             segment.commandBuffers.push_back(original.pCommandBufferInfos[nextCommandBuffer]);
 
         segment.AddSignal(pending.resourceCopySemaphore, pending.resourceCopyValue);
+        segment.submit.pNext = passThrough;
         out.push_back(segment.Finalize());
 
         auto& copyBack = storage.emplace_back();
@@ -6482,7 +6726,31 @@ static void AppendSubmit2InteropSubmits(const VkSubmitInfo2& original, const Pen
 
     tail.signals.assign(original.pSignalSemaphoreInfos,
                         original.pSignalSemaphoreInfos + original.signalSemaphoreInfoCount);
+    tail.submit.pNext = passThrough;
     out.push_back(tail.Finalize());
+}
+
+// Same as AppendUnsplitLegacySubmit
+static void AppendUnsplitSubmit2(const VkSubmitInfo2& original, const PendingInterop* interops, size_t interopCount,
+                                 std::deque<Submit2SplitSubmit>& storage, std::vector<VkSubmitInfo2>& out)
+{
+    auto& copy = storage.emplace_back();
+    size_t next = 0;
+    for (uint32_t i = 0; i < original.commandBufferInfoCount; i++)
+    {
+        copy.commandBuffers.push_back(original.pCommandBufferInfos[i]);
+
+        if (next < interopCount && interops[next].commandBufferIndex == i)
+        {
+            copy.AddCommandBuffer(interops[next].pending.barrierCommandBuffer);
+            next++;
+        }
+    }
+
+    copy.submit = original;
+    copy.submit.commandBufferInfoCount = static_cast<uint32_t>(copy.commandBuffers.size());
+    copy.submit.pCommandBufferInfos = copy.commandBuffers.data();
+    out.push_back(copy.submit);
 }
 
 template <typename SubmitFn>
@@ -6491,6 +6759,7 @@ static VkResult Submit2WithDx12Interop(SubmitFn originalSubmit, const char* name
                                        const std::vector<PendingInterop>& interops)
 {
     std::deque<Submit2SplitSubmit> storage;
+    std::deque<SubmitPassThrough> passThroughs;
     std::vector<VkSubmitInfo2> finalSubmits;
     finalSubmits.reserve(submitCount + interops.size() * 2);
     std::vector<PendingInterop> injected;
@@ -6509,16 +6778,27 @@ static VkResult Submit2WithDx12Interop(SubmitFn originalSubmit, const char* name
         }
 
         const auto& original = pSubmits[i];
-        if (original.pNext != nullptr || original.flags != 0)
+        if (original.flags != 0)
         {
             AbortPendingD3D12Waits(interops.data() + first, next - first,
-                                   original.pNext != nullptr ? "unsupported VkSubmitInfo2 pNext chain"
-                                                             : "non-zero VkSubmitInfo2 flags are unsupported");
+                                   "non-zero VkSubmitInfo2 flags are unsupported");
             finalSubmits.push_back(original);
             continue;
         }
 
-        AppendSubmit2InteropSubmits(original, interops.data() + first, next - first, storage, finalSubmits);
+        auto& passThrough = passThroughs.emplace_back();
+        const bool aborted = HasAbortedInterop(interops.data() + first, next - first);
+        if (aborted || !passThrough.AddChain(original.pNext))
+        {
+            AbortPendingD3D12Waits(interops.data() + first, next - first,
+                                   aborted ? "upscale wasn't submitted in time"
+                                           : "unsupported VkSubmitInfo2 pNext chain");
+            AppendUnsplitSubmit2(original, interops.data() + first, next - first, storage, finalSubmits);
+            continue;
+        }
+
+        AppendSubmit2InteropSubmits(original, passThrough.chain, interops.data() + first, next - first, storage,
+                                    finalSubmits);
 
         for (size_t k = first; k < next; k++)
         {
@@ -6600,8 +6880,8 @@ VkResult Vulkan_wDx12::hk_vkQueueSubmit2KHR(VkQueue queue, uint32_t submitCount,
 VkResult Vulkan_wDx12::hk_vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
                                                const VkCommandBufferBeginInfo* pBeginInfo)
 {
-    if (GetVirtualCommandBuffer(commandBuffer) == VK_NULL_HANDLE)
-        cmdBufferStateTracker.OnBegin(commandBuffer, pBeginInfo);
+    DiscardPendingInterop(commandBuffer);
+    cmdBufferStateTracker.OnBegin(commandBuffer, pBeginInfo);
 
 #ifdef LOG_ALL_RECORDS
     LOG_DEBUG("commandBuffer: {:X}", (size_t) commandBuffer);
@@ -6637,8 +6917,8 @@ VkResult Vulkan_wDx12::hk_vkResetCommandBuffer(VkCommandBuffer commandBuffer, Vk
     LOG_DEBUG("commandBuffer: {:X}", (size_t) commandBuffer);
 #endif
 
-    if (GetVirtualCommandBuffer(commandBuffer) == VK_NULL_HANDLE)
-        cmdBufferStateTracker.OnReset(commandBuffer);
+    DiscardPendingInterop(commandBuffer);
+    cmdBufferStateTracker.OnReset(commandBuffer);
 
     return o_vkResetCommandBuffer(commandBuffer, flags);
 }
@@ -6650,6 +6930,9 @@ void Vulkan_wDx12::hk_vkFreeCommandBuffers(VkDevice device, VkCommandPool comman
     LOG_DEBUG("device: {:X}, commandPool: {:X}, commandBufferCount: {}", (size_t) device, (size_t) commandPool,
               commandBufferCount);
 #endif
+
+    for (uint32_t i = 0; i < commandBufferCount; i++)
+        DiscardPendingInterop(pCommandBuffers[i]);
 
     // Notify state tracker before freeing
     cmdBufferStateTracker.OnFreeCommandBuffers(commandPool, commandBufferCount, pCommandBuffers);
@@ -6700,6 +6983,12 @@ void Vulkan_wDx12::hk_vkDestroyCommandPool(VkDevice device, VkCommandPool comman
     LOG_DEBUG("device: {:X}, commandPool: {:X}", (size_t) device, (size_t) commandPool);
 #endif
 
+    if (pendingSubmissionCount > 0)
+    {
+        for (auto commandBuffer : cmdBufferStateTracker.GetPoolCommandBuffers(commandPool))
+            DiscardPendingInterop(commandBuffer);
+    }
+
     // Notify state tracker about pool destruction
     cmdBufferStateTracker.OnDestroyPool(commandPool);
 
@@ -6716,6 +7005,12 @@ VkResult Vulkan_wDx12::hk_vkResetCommandPool(VkDevice device, VkCommandPool comm
 #ifdef LOG_ALL_RECORDS
     LOG_DEBUG("device: {:X}, commandPool: {:X}, flags: {:X}", (size_t) device, (size_t) commandPool, (uint32_t) flags);
 #endif
+
+    if (pendingSubmissionCount > 0)
+    {
+        for (auto commandBuffer : cmdBufferStateTracker.GetPoolCommandBuffers(commandPool))
+            DiscardPendingInterop(commandBuffer);
+    }
 
     // Notify state tracker before reset
     cmdBufferStateTracker.OnResetPool(commandPool);
@@ -7171,6 +7466,13 @@ PFN_vkVoidFunction Vulkan_wDx12::GetAddress(const PFN_vkVoidFunction original, c
             o_vkCmdWaitEvents = (PFN_vkCmdWaitEvents) original;
 
         return (PFN_vkVoidFunction) hk_vkCmdWaitEvents;
+    }
+    if (procName == std::string("vkDestroyImage"))
+    {
+        if (o_vkDestroyImage == nullptr)
+            o_vkDestroyImage = (PFN_vkDestroyImage) original;
+
+        return (PFN_vkVoidFunction) hk_vkDestroyImage;
     }
     if (procName == std::string("vkCmdPipelineBarrier"))
     {
@@ -9362,6 +9664,7 @@ void Vulkan_wDx12::Hook(HMODULE vulkanModule)
     o_vkCmdResetEvent = (PFN_vkCmdResetEvent) DetouredExport(vulkanModule, "vkCmdResetEvent");
     o_vkCmdWaitEvents = (PFN_vkCmdWaitEvents) DetouredExport(vulkanModule, "vkCmdWaitEvents");
     o_vkCmdPipelineBarrier = (PFN_vkCmdPipelineBarrier) DetouredExport(vulkanModule, "vkCmdPipelineBarrier");
+    o_vkDestroyImage = (PFN_vkDestroyImage) DetouredExport(vulkanModule, "vkDestroyImage");
     o_vkCmdBeginQuery = (PFN_vkCmdBeginQuery) DetouredExport(vulkanModule, "vkCmdBeginQuery");
     o_vkCmdEndQuery = (PFN_vkCmdEndQuery) DetouredExport(vulkanModule, "vkCmdEndQuery");
     o_vkCmdResetQueryPool = (PFN_vkCmdResetQueryPool) DetouredExport(vulkanModule, "vkCmdResetQueryPool");
@@ -9894,6 +10197,9 @@ void Vulkan_wDx12::Hook(HMODULE vulkanModule)
 
         if (o_vkCmdPipelineBarrier)
             DetourAttach(&(PVOID&) o_vkCmdPipelineBarrier, hk_vkCmdPipelineBarrier);
+
+        if (o_vkDestroyImage)
+            DetourAttach(&(PVOID&) o_vkDestroyImage, hk_vkDestroyImage);
 
         if (o_vkCmdBeginQuery)
             DetourAttach(&(PVOID&) o_vkCmdBeginQuery, hk_vkCmdBeginQuery);
@@ -10891,12 +11197,12 @@ void Vulkan_wDx12::Unhook()
         DetourDetach(&(PVOID&) o_vkQueueSubmit2, hk_vkQueueSubmit2);
 
     if (o_vkQueueSubmit2KHR)
-        DetourDetach(&(PVOID&) o_vkQueueSubmit2KHR, hk_vkQueueSubmit2);
+        DetourDetach(&(PVOID&) o_vkQueueSubmit2KHR, hk_vkQueueSubmit2KHR);
 
     auto detourResult = DetourTransactionCommit();
     if (detourResult != NO_ERROR)
     {
-        LOG_ERROR("Failed to detach Vulkan hooks: %d", detourResult);
+        LOG_ERROR("Failed to detach Vulkan hooks: {}", detourResult);
     }
     else
     {

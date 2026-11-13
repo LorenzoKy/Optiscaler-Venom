@@ -128,6 +128,7 @@ DEFINE_NAME_VECTORS(nvapi, "nvapi64");
 DEFINE_NAME_VECTORS(slInterposer, "sl.interposer");
 DEFINE_NAME_VECTORS(slDlss, "sl.dlss");
 DEFINE_NAME_VECTORS(slDlssg, "sl.dlss_g");
+DEFINE_NAME_VECTORS(slDlssd, "sl.dlss_d");
 DEFINE_NAME_VECTORS(slReflex, "sl.reflex");
 DEFINE_NAME_VECTORS(slPcl, "sl.pcl");
 DEFINE_NAME_VECTORS(slCommon, "sl.common");
@@ -161,7 +162,9 @@ inline static bool CompareFileName(std::string* first, std::string* second)
 
     auto start = first->size() - second->size();
 
-    bool match = true;
+    if (start > 0 && (*first)[start - 1] != '\\' && (*first)[start - 1] != '/')
+        return false;
+
     for (size_t j = 0; j < second->size(); ++j)
     {
         if (std::tolower(static_cast<unsigned char>((*first)[start + j])) !=
@@ -181,7 +184,9 @@ inline static bool CompareFileNameW(std::wstring* first, std::wstring* second)
 
     auto start = first->size() - second->size();
 
-    bool match = true;
+    if (start > 0 && (*first)[start - 1] != L'\\' && (*first)[start - 1] != L'/')
+        return false;
+
     for (size_t j = 0; j < second->size(); ++j)
     {
         if (std::towlower((*first)[start + j]) != std::towlower((*second)[j]))

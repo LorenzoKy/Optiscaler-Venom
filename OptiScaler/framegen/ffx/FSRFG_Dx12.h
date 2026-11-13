@@ -18,6 +18,9 @@ class FSRFG_Dx12 : public virtual IFGFeature_Dx12
     FfxApiSurfaceFormat _usingHudlessFormat = FFX_API_SURFACE_FORMAT_UNKNOWN;
     feature_version _version { 0, 0, 0 };
 
+    // Custom FG and swapchain provider, nullptr for the regular FFX one
+    CustomFfxModule* _custom = FfxApiProxy::ActiveCustomFgDx12();
+
     bool _linkedHudlesDesc = false;
 
     uint32_t _maxRenderWidth = 0;
@@ -38,6 +41,7 @@ class FSRFG_Dx12 : public virtual IFGFeature_Dx12
 
     ID3D12GraphicsCommandList* _fgCommandList[BUFFER_COUNT] {};
     ID3D12CommandAllocator* _fgCommandAllocator[BUFFER_COUNT] {};
+    UINT64 _fgAllocatorFenceValues[BUFFER_COUNT] {}; // _scFence values
 
     static FfxApiResourceState GetFfxApiState(D3D12_RESOURCE_STATES state)
     {

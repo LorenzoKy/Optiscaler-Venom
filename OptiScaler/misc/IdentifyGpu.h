@@ -87,17 +87,28 @@ class IdentifyGpu
     inline static bool hasD3d12Capabilities = false;
     inline static std::mutex mutex {};
     inline static std::vector<GpuInformation> cache {};
+    inline static thread_local bool isFetching = false;
+    inline static std::atomic<bool> nvidiaHint { false };
 
     static std::vector<GpuInformation> checkGpuInfo();
     static void queryNvapi(GpuInformation& gpuInfo);
 
   public:
+    // D3D12 returns the same device for an adapter, probing counts its references to undo amdxc64's leak.
+    // Device creations wait on it so the probe never releases references taken by the game or other mods
+    inline static std::recursive_mutex probeDeviceMutex {};
+
     static void getHardwareAdapter(IDXGIFactory* InFactory, IDXGIAdapter** InAdapter,
                                    D3D_FEATURE_LEVEL requiredFeatureLevel);
 
     // Sorted by priority, the first one should be treated as the primary one
     static std::vector<GpuInformation> getAllGpus();
+    // True on the thread that is detecting GPUs, devices created then aren't the game's
+    static bool isDetecting();
     static GpuInformation getPrimaryGpu();
+
+    // Startup nvapi check, getPrimaryGpu uses it while detection is running
+    static void setNvidiaHint(bool nvidia) { nvidiaHint = nvidia; }
 
     // Game is rendering through the translation layer, based on the API it's currently using
     static bool gameUsesDxvk();
