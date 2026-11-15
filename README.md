@@ -190,7 +190,7 @@ Issues about upstream or third-party code may be closed with a pointer to the ri
 
 | | Stable releases | Nightly builds |
 | --- | --- | --- |
-| What | Checked by me before publishing | The **official OptiScaler nightly of the day** + Venom, built automatically |
+| What | Checked by me before publishing | The **latest official OptiScaler nightly** + Venom, built automatically: checked every 10 minutes, a new one comes out as soon as upstream's nightly or Venom's patches change |
 | Tested in game | ✅ (in the games I have, not every game) | ❌ **Not tested** |
 | Where | [**Latest release**](https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest) | [**Pre-releases**](https://github.com/LorenzoKy/Optiscaler-Venom/releases) named `OptiScaler Venom nightly YYYYMMDD` |
 

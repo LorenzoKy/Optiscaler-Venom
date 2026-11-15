@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Applies the Venom patches (the commits of <range>) on the checked out upstream commit, the same way for the nightly
-# and for the hourly look-ahead on upstream master.
+# and for the look-ahead on upstream master at every check.
 # Conflicts already solved once are solved again from .github/rerere (git rerere's cache, recorded with
 # Tools\dev\export-rerere-cache.ps1 on the repo where the conflict was solved), so a conflict needs a hand only the
 # first time, and the patch branch doesn't have to be rebased (rebasing it would drop the latest release's commit

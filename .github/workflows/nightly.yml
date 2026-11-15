@@ -4,25 +4,29 @@
 # commit below; manual releases: tag a fresh commit) and .github/scripts/check-release-order.sh must pass. A nightly
 # is tagged after the latest release (opti-venom-v0.3-nightly-20261102), so it sorts above a release of its day and
 # below the next one: it comes out also on a day a release is already out.
-# Every day: takes the latest official OptiScaler nightly, applies the Opti-Venom
+# Every 10 minutes: takes the latest official OptiScaler nightly, applies the Opti-Venom
 # patches (branch opti-venom of LorenzoKy/OptiScaler) on the same upstream commit,
 # builds it and publishes a pre-release. On a conflict it skips the build and opens an issue.
+# Upstream is followed only through its nightlies: a Venom nightly is always built on the exact master commit the
+# official nightly built, never on newer master commits.
+# The only rule: no build when the latest Venom nightly is the same one, built from this upstream nightly (tag and
+# commit) and these patches (marker in its notes). Any change, a new upstream nightly, one republished on another
+# commit or new Venom patches, gives a Venom nightly at the next check, whatever the day or the hour.
 # Conflicts where a side only added lines are solved automatically (.github/scripts/auto-resolve.py).
 # The others: solve them once on the repo with git rerere on and add the resolution to .github/rerere
 # (Tools\dev\export-rerere-cache.ps1), don't rebase opti-venom between releases: the nightlies replay the
-# resolution. Every hourly run also tries the patches on upstream master's tip ("Look ahead"), so a conflict that
+# resolution. Every run also tries the patches on upstream master's tip ("Look ahead"), so a conflict that
 # the next upstream nightly will bring opens an issue hours before it, while there's time to record its resolution.
-# GitHub starts scheduled runs late, often by hours (upstream's 04:00 UTC nightly comes out around 09:00 UTC),
-# so a quick check runs every hour and the build starts at the first check that finds today's upstream nightly
-# not built yet. If it is still missing at 20:00 Italian time the check fails, so GitHub sends a mail.
+# GitHub can start scheduled runs late or skip some when busy: the next 10 minute check catches up.
 # Two-way sync: a nightly is published only if the patch branch has the latest release (.github/venom-patch).
-# Every day with an upstream nightly gets a Venom nightly, also when a Venom release came out that day.
+# Every new upstream nightly gets a Venom nightly, also when a Venom release came out that day. A second build
+# with the same date (republished upstream nightly, new patches) replaces that date's nightly.
 name: Nightly
 
 on:
   schedule:
-    # Every hour, all day, off the full hour where GitHub's queue is longest
-    - cron: "23 * * * *"
+    # Every 10 minutes, off the full hour where GitHub's queue is longest
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
     inputs:
       nightly_tag:
@@ -50,7 +54,7 @@ env:
   GH_TOKEN: ${{ github.token }}
 
 jobs:
-  # Cheap Linux check every hour, the Windows build only when there's something to build
+  # Cheap Linux check every 10 minutes, the Windows build only when the nightly isn't the same as the last one
   check:
     runs-on: ubuntu-latest
     outputs:
@@ -61,6 +65,8 @@ jobs:
       ours: ${{ steps.find.outputs.ours }}
       replace: ${{ steps.find.outputs.replace }}
       url: ${{ steps.find.outputs.url }}
+      key: ${{ steps.find.outputs.key }}
+      attempt: ${{ steps.find.outputs.attempt }}
 
     steps:
     - uses: actions/checkout@v6
@@ -73,23 +79,10 @@ jobs:
         tag="${{ inputs.nightly_tag }}"
         [ -z "$tag" ] && tag=$(gh release list -R "$NIGHTLY_REPO" -L 1 --json tagName --jq '.[0].tagName')
         [ -z "$tag" ] && { echo "::error::No upstream nightly found"; exit 1; }
-        hour=$(TZ=Europe/Rome date +%-H)
-        if [ "${{ github.event_name }}" = "schedule" ] && [ "${tag#nightly-}" != "$(date -u +%Y%m%d)" ]; then
-          # Once a day, not every hour until midnight
-          if [ "$hour" -eq 20 ]; then
-            echo "::error::$hour:00 Italian time and today's upstream nightly is still missing (latest: $tag)"; exit 1
-          fi
-          echo "Today's upstream nightly is not out yet (latest: $tag), the next hourly check looks again"
-          echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
-        fi
         date=${tag#nightly-}
-        # One nightly per day, whatever release it was tagged after (old ones: opti-venom-nightly-<date>)
+        # A nightly of the same date is replaced by a new build, whatever release it was tagged after
         done_tag=$(gh release list -R "$GITHUB_REPOSITORY" -L 100 --json tagName \
           --jq "[.[] | select(.tagName | endswith(\"-nightly-$date\"))][0].tagName // empty")
-        if [ "${{ inputs.force }}" != "true" ] && [ -n "$done_tag" ]; then
-          echo "$done_tag already released, nothing to do"
-          echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
-        fi
         # Tagged after the latest release: on the same UTC day it sorts above it (opti-venom-v0.3-nightly-... >
         # opti-venom-v0.3) and below the next one (opti-venom-v0.3.1, opti-venom-v0.4-beta1)
         last=$(gh release list -R "$GITHUB_REPOSITORY" -L 100 --json tagName,isDraft \
@@ -102,14 +95,49 @@ jobs:
           --jq "[.workflow_runs[] | select(.run_started_at <= \"$published\")][0].run_started_at")
         sha=$(gh api "repos/$UPSTREAM/commits?sha=master&until=${started:-$published}&per_page=1" --jq '.[0].sha')
         [ -z "$sha" ] && { echo "::error::No upstream commit found before $published"; exit 1; }
+        patch=$(gh api "repos/$PATCH_REPO/commits/$PATCH_BRANCH" --jq .sha)
+        [ -z "$patch" ] && { echo "::error::No $PATCH_REPO@$PATCH_BRANCH found"; exit 1; }
+        # The only rule: the same nightly isn't built twice. Same = the latest Venom nightly was built from this
+        # upstream nightly, this commit and these patches (its notes' marker). Nightlies from before the marker
+        # are the same when their notes link this upstream nightly and this commit.
+        key="$tag $sha $patch"
+        last_nightly=$(gh release list -R "$GITHUB_REPOSITORY" -L 100 --json tagName,createdAt \
+          --jq '[.[] | select(.tagName | test("-nightly-[0-9]{8}$"))] | sort_by(.createdAt) | last | .tagName // empty')
+        same=false
+        if [ -n "$last_nightly" ]; then
+          body=$(gh release view "$last_nightly" -R "$GITHUB_REPOSITORY" --json body --jq .body)
+          if grep -qF "<!-- venom-nightly:" <<< "$body"; then
+            grep -qF "<!-- venom-nightly: $key -->" <<< "$body" && same=true
+          elif grep -qF "/releases/tag/$tag)" <<< "$body" && grep -qF "/commit/$sha)" <<< "$body"; then
+            same=true
+          fi
+        fi
+        if [ "${{ inputs.force }}" != "true" ] && [ "$same" = true ]; then
+          echo "$last_nightly is already this nightly ($tag, ${sha:0:8}, patches ${patch:0:8}), nothing to do"
+          echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
+        fi
+        # A conflict already reported for this nightly isn't tried again every 10 minutes: it is when the
+        # resolutions in .github/rerere, the patches or the upstream nightly change
+        rerere=$(gh api "repos/$GITHUB_REPOSITORY/contents/.github?ref=$GITHUB_SHA" \
+          --jq '[.[] | select(.name == "rerere")][0].sha // "none"')
+        attempt="$key $rerere"
+        for n in $(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict --state open --json number --jq '.[].number'); do
+          if gh issue view "$n" -R "$GITHUB_REPOSITORY" --json body,comments --jq '.body, .comments[].body' \
+              | grep -qF "<!-- venom-attempt: $attempt -->" && [ "${{ inputs.force }}" != "true" ]; then
+            echo "::notice::This nightly conflicted already (issue #$n): push its resolution to .github/rerere, the next check tries again"
+            echo "build=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+        done
         # It must be listed above every other release: the tag after the latest release makes it so, this only warns
         ORDER_LEVEL=warning bash .github/scripts/check-release-order.sh "$GITHUB_REPOSITORY" "$ours" "$(date -u +%FT%TZ)" || true
         {
           echo "build=true"; echo "tag=$tag"; echo "sha=$sha"; echo "date=$date"; echo "ours=$ours"
           echo "replace=$done_tag"
           echo "url=https://github.com/$NIGHTLY_REPO/releases/tag/$tag"
+          echo "key=$key"
+          echo "attempt=$attempt"
         } >> "$GITHUB_OUTPUT"
-        echo "Upstream nightly $tag (run started ${started:-unknown}) = $UPSTREAM@$sha"
+        echo "Upstream nightly $tag (run started ${started:-unknown}) = $UPSTREAM@$sha, patches $PATCH_BRANCH@${patch:0:8}"
 
   # The patches on upstream master's tip, what the next upstream nightly will build: a conflict there gets an issue
   # before the nightly comes, one that is gone closes it
@@ -188,6 +216,8 @@ jobs:
       OURS: ${{ needs.check.outputs.ours }}
       REPLACE: ${{ needs.check.outputs.replace }}
       NIGHTLY_URL: ${{ needs.check.outputs.url }}
+      KEY: ${{ needs.check.outputs.key }}
+      ATTEMPT: ${{ needs.check.outputs.attempt }}
 
     steps:
     - uses: actions/checkout@v6
@@ -205,6 +235,9 @@ jobs:
         cd src
         git checkout -q --detach "$SHA"
         git fetch -q "https://github.com/$PATCH_REPO.git" "$PATCH_BRANCH:venom-patch"
+        # The patches the check compared, the marker in the notes names them
+        patch_sha=${KEY##* }
+        git fetch -q "https://github.com/$PATCH_REPO.git" "$patch_sha" 2>/dev/null && git branch -qf venom-patch "$patch_sha"
         # The nightly must have everything of the latest Venom release
         released=$(tr -d '[:space:]' < ../venom/.github/venom-patch 2>/dev/null || true)
         if [ -n "$released" ]; then
@@ -217,17 +250,9 @@ jobs:
         # Only our commits: those of the patch branch that upstream master doesn't have
         base=$(git merge-base venom-patch origin/master)
         git log --reverse --format="- [\`%h\`](https://github.com/$PATCH_REPO/commit/%H) %s" "$base..venom-patch" > ../patches.txt
-        # Patches already on a newer master than the nightly's: built as they are, they have the nightly
-        upstream=$SHA
-        newer=false
-        if [ "$base" != "$SHA" ] && git merge-base --is-ancestor "$SHA" "$base"; then
-          upstream=$base
-          newer=true
-          git checkout -q --detach "$base"
-        fi
+        # Always the nightly's own commit, also when the patches sit on a newer master
         {
-          echo "upstream_sha=$upstream"
-          echo "newer=$newer"
+          echo "upstream_sha=$SHA"
           echo "base=$base"
           echo "patch=$(git rev-parse --short=8 venom-patch)"
           echo "patch_sha=$(git rev-parse venom-patch)"
@@ -274,6 +299,9 @@ jobs:
             echo '```'
             echo "</details>"
           fi
+          echo
+          # The check doesn't try this nightly again until something in it changes
+          echo "<!-- venom-attempt: $ATTEMPT -->"
         } > issue.md
         open=$(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-conflict --state open --json number --jq '.[0].number')
         if [ -n "$open" ]; then
@@ -388,11 +416,7 @@ jobs:
         name="${{ steps.package.outputs.name }}"
         d="$DATE"
         {
-          if [ "${{ steps.merge.outputs.newer }}" = "true" ]; then
-            echo "Automatic build from Opti merge: \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA), newer than [$TAG]($NIGHTLY_URL)."
-          else
-            echo "Automatic build from Opti merge: [$TAG]($NIGHTLY_URL), \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA)."
-          fi
+          echo "Automatic build from Opti merge: [$TAG]($NIGHTLY_URL), \`master\` at [\`${SHA:0:8}\`](https://github.com/$UPSTREAM/commit/$SHA)."
           echo
           if [ "${{ steps.upstream.outputs.since }}" = "last" ]; then
             echo "### 🆕 OptiScaler changes since the last Venom nightly"
@@ -405,6 +429,9 @@ jobs:
           echo "### 🐍 Venom changes in this build"
           echo
           cat patches.txt
+          echo
+          # What this nightly was built from: the check builds again only when it changes
+          echo "<!-- venom-nightly: $KEY -->"
         } > notes.md
         # A forced rebuild replaces the day's nightly, also one tagged after an older release
         for t in "$OURS" $REPLACE; do
