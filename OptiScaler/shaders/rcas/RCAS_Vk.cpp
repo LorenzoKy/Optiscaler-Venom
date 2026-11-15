@@ -3,6 +3,7 @@
 #include "precompile/RCAS_Shader_Vk.h"
 #include "precompile/da_das_sharpen_Shader_Vk.h"
 #include "precompile/da_rcas_sharpen_Shader_Vk.h"
+#include "precompile/neural_sharpen_Shader_Vk.h"
 #include <Config.h>
 #include <misc/DeferredRelease.h>
 
@@ -104,6 +105,14 @@ RCAS_Vk::RCAS_Vk(std::string InName, VkDevice InDevice, VkPhysicalDevice InPhysi
         return;
     }
 
+    // Optional, Neural uses RCAS without it
+    std::vector<char> shaderCodeNeural(neural_sharpen_spv, neural_sharpen_spv + sizeof(neural_sharpen_spv));
+    if (!CreateComputePipeline(_device, _pipelineLayout, &_pipelineNeural, shaderCodeNeural))
+    {
+        LOG_ERROR("Failed to create pipeline for Neural sharpening");
+        _pipelineNeural = VK_NULL_HANDLE;
+    }
+
     _init = true;
 }
 
@@ -111,7 +120,7 @@ RCAS_Vk::~RCAS_Vk()
 {
     // Command buffers in flight can still reference these, like the base ones
     DeferredRelease::Enqueue(
-        [device = _device, pipelineDA = _pipelineDA, pipelineDASDA = _pipelineDASDA,
+        [device = _device, pipelineDA = _pipelineDA, pipelineDASDA = _pipelineDASDA, pipelineNeural = _pipelineNeural,
          descriptorPoolDA = _descriptorPoolDA, descriptorSetLayoutDA = _descriptorSetLayoutDA,
          pipelineLayoutDA = _pipelineLayoutDA, constantBufferDA = _constantBufferDA,
          constantBufferMemoryDA = _constantBufferMemoryDA]()
@@ -120,6 +129,8 @@ RCAS_Vk::~RCAS_Vk()
                 vkDestroyPipeline(device, pipelineDA, nullptr);
             if (pipelineDASDA != VK_NULL_HANDLE)
                 vkDestroyPipeline(device, pipelineDASDA, nullptr);
+            if (pipelineNeural != VK_NULL_HANDLE)
+                vkDestroyPipeline(device, pipelineNeural, nullptr);
             if (descriptorPoolDA != VK_NULL_HANDLE)
                 vkDestroyDescriptorPool(device, descriptorPoolDA, nullptr);
             if (descriptorSetLayoutDA != VK_NULL_HANDLE)
@@ -210,6 +221,33 @@ bool RCAS_Vk::DispatchRCAS(VkCommandBuffer InCmdList, RcasConstants InConstants,
     return true;
 }
 
+bool RCAS_Vk::DispatchNeural(VkCommandBuffer InCmdList, RcasConstants InConstants, const VkImageInfo& InResourceInfo,
+                             const VkImageInfo& InMotionVectorsInfo, const VkImageInfo& OutResourceInfo)
+{
+    if (_pipelineNeural == VK_NULL_HANDLE)
+        return false;
+
+    InternalConstantsNeural constants {};
+    constants.OutputWidth = OutResourceInfo.Width;
+    constants.OutputHeight = OutResourceInfo.Height;
+    constants.MotionWidth = InMotionVectorsInfo.Width;
+    constants.MotionHeight = InMotionVectorsInfo.Height;
+    FillMotionConstants(constants, InConstants);
+
+    _currentSetIndex = (_currentSetIndex + 1) % _maxFramesInFlight;
+    UpdateDescriptorSet(WriteConstants(&constants, sizeof(InternalConstantsNeural)), _currentSetIndex,
+                        InResourceInfo.ImageView, InMotionVectorsInfo.ImageView, OutResourceInfo.ImageView);
+
+    vkCmdBindPipeline(InCmdList, VK_PIPELINE_BIND_POINT_COMPUTE, _pipelineNeural);
+    vkCmdBindDescriptorSets(InCmdList, VK_PIPELINE_BIND_POINT_COMPUTE, _pipelineLayout, 0, 1,
+                            &_descriptorSets[_currentSetIndex], 0, nullptr);
+
+    uint32_t groupX = (constants.OutputWidth + 15) / 16;
+    uint32_t groupY = (constants.OutputHeight + 15) / 16;
+    vkCmdDispatch(InCmdList, groupX, groupY, 1);
+    return true;
+}
+
 bool RCAS_Vk::DispatchDepthAdaptive(VkCommandBuffer InCmdList, RcasConstants InConstants,
                                     const VkImageInfo& InResourceInfo, const VkImageInfo& InMotionVectorsInfo,
                                     const VkImageInfo& OutResourceInfo, VkImageInfo* InDepthInfo, bool isDAS)
@@ -264,7 +302,16 @@ bool RCAS_Vk::Dispatch(VkDevice InDevice, VkCommandBuffer InCmdList, RcasConstan
     if (InDepthInfo == nullptr &&
         (sharpnessShader == SharpenShader::LocalContrastDepthAware || sharpnessShader == SharpenShader::DepthAware))
         sharpnessShader = SharpenShader::RCAS;
-    if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
+
+    // Neural falls back to RCAS when its pipeline couldn't be made
+    if (sharpnessShader == SharpenShader::Neural && _pipelineNeural == VK_NULL_HANDLE)
+        sharpnessShader = SharpenShader::RCAS;
+
+    if (sharpnessShader == SharpenShader::Neural)
+    {
+        return DispatchNeural(InCmdList, InConstants, InResourceInfo, InMotionVectorsInfo, OutResourceInfo);
+    }
+    else if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
     {
         return DispatchDepthAdaptive(InCmdList, InConstants, InResourceInfo, InMotionVectorsInfo, OutResourceInfo,
                                      InDepthInfo, true);

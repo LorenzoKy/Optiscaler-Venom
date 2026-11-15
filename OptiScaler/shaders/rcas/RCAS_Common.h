@@ -4,6 +4,7 @@
 
 #include "shaders/DA_DAS_Shader.h"
 #include "shaders/DA_RCAS_Shader.h"
+#include "shaders/NEURAL_Shader.h"
 #include "shaders/RCAS_Shader.h"
 
 struct RcasConstants
@@ -85,6 +86,38 @@ class RCAS_Common
         int DepthHeight;
     };
 
+    // Same order as the cbuffer of neural_sharpen.hlsl
+    struct alignas(256) InternalConstantsNeural
+    {
+        float Sharpness;
+        float EdgeResponse;
+        int Model;
+        int Debug;
+
+        int DynamicSharpenEnabled;
+        int DisplaySizeMV;
+        int IsHdr;
+        int ClampOutput;
+
+        float MotionSharpness;
+        float MotionTextureScale;
+        float MvScaleX;
+        float MvScaleY;
+
+        float MotionThreshold;
+        float MotionScaleLimit;
+        int OutputWidth;
+        int OutputHeight;
+
+        int MotionWidth;
+        int MotionHeight;
+    };
+
+    // Dx11 and Vulkan write it in the constant buffers of the other shaders
+    static_assert(sizeof(InternalConstantsNeural) <= sizeof(InternalConstants));
+    static_assert(sizeof(InternalConstantsNeural) <= sizeof(InternalConstantsDA));
+
     void FillMotionConstants(InternalConstants& OutConstants, const RcasConstants& InConstants);
     void FillMotionConstants(InternalConstantsDA& OutConstants, const RcasConstants& InConstants);
+    void FillMotionConstants(InternalConstantsNeural& OutConstants, const RcasConstants& InConstants);
 };

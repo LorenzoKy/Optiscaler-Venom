@@ -5,6 +5,7 @@
 #include "precompile/RCAS_Shader.h"
 #include "precompile/da_das_sharpen_Shader.h"
 #include "precompile/da_rcas_sharpen_Shader.h"
+#include "precompile/neural_sharpen_Shader.h"
 
 #include <Config.h>
 
@@ -98,6 +99,48 @@ bool RCAS_Dx12::DispatchDepthAdaptive(ID3D12PipelineState* pipelineState, ID3D12
     return true;
 }
 
+bool RCAS_Dx12::DispatchNeural(ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource,
+                               ID3D12Resource* InMotionVectors, RcasConstants InConstants, ID3D12Resource* OutResource,
+                               FrameDescriptorHeap& currentHeap)
+{
+    if (InMotionVectors == nullptr || _pipelineStateNeural == nullptr || _device == nullptr)
+        return false;
+
+    CreateShaderResourceView(_device, InResource, currentHeap.GetSrvCPU(0));
+    CreateShaderResourceView(_device, InMotionVectors, currentHeap.GetSrvCPU(1));
+    CreateUnorderedAccessView(_device, OutResource, currentHeap.GetUavCPU(0), 0);
+
+    InternalConstantsNeural constants {};
+
+    auto outDesc = OutResource->GetDesc();
+    auto mvsDesc = InMotionVectors->GetDesc();
+
+    constants.OutputWidth = (uint32_t) outDesc.Width;
+    constants.OutputHeight = outDesc.Height;
+    constants.MotionWidth = (uint32_t) mvsDesc.Width;
+    constants.MotionHeight = mvsDesc.Height;
+
+    FillMotionConstants(constants, InConstants);
+
+    if (!CreateConstantsBuffer(_device, currentHeap, constants, currentHeap.GetCbvCPU(0)))
+    {
+        LOG_ERROR("[{0}] Failed to create a constants buffer", _name);
+        return false;
+    }
+
+    ID3D12DescriptorHeap* heaps[] = { currentHeap.GetHeapCSU() };
+    InCmdList->SetDescriptorHeaps(_countof(heaps), heaps);
+    InCmdList->SetComputeRootSignature(_rootSignature);
+    InCmdList->SetPipelineState(_pipelineStateNeural);
+    InCmdList->SetComputeRootDescriptorTable(0, currentHeap.GetTableGPUStart());
+
+    UINT dispatchWidth = static_cast<UINT>((constants.OutputWidth + InNumThreadsX - 1) / InNumThreadsX);
+    UINT dispatchHeight = (constants.OutputHeight + InNumThreadsY - 1) / InNumThreadsY;
+    InCmdList->Dispatch(dispatchWidth, dispatchHeight, 1);
+
+    return true;
+}
+
 bool RCAS_Dx12::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource, D3D12_RESOURCE_STATES InState)
 {
     auto resourceFlags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
@@ -142,7 +185,15 @@ bool RCAS_Dx12::Dispatch(ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* I
         (sharpnessShader == SharpenShader::LocalContrastDepthAware || sharpnessShader == SharpenShader::DepthAware))
         sharpnessShader = SharpenShader::RCAS;
 
-    if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
+    // Neural falls back to RCAS when its pipeline couldn't be made
+    if (sharpnessShader == SharpenShader::Neural && _pipelineStateNeural == nullptr)
+        sharpnessShader = SharpenShader::RCAS;
+
+    if (sharpnessShader == SharpenShader::Neural)
+    {
+        return DispatchNeural(InCmdList, InResource, InMotionVectors, InConstants, OutResource, currentHeap);
+    }
+    else if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
     {
         return DispatchDepthAdaptive(_pipelineStateDASDA, InCmdList, InResource, InMotionVectors, InDepth, InConstants,
                                      OutResource, currentHeap);
@@ -198,6 +249,14 @@ RCAS_Dx12::RCAS_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(I
         return;
     }
 
+    // Optional, Neural uses RCAS without it
+    if (!CreateComputePipeline(InDevice, &_pipelineStateNeural, neural_sharpen_cso, sizeof(neural_sharpen_cso),
+                               neuralSharpenCode.c_str()))
+    {
+        LOG_ERROR("[{0}] Failed to create compute pipeline Neural", _name);
+        _pipelineStateNeural = nullptr;
+    }
+
     _init = InitHeaps(InDevice, _frameHeaps, RCAS_NUM_OF_HEAPS);
 }
 
@@ -208,6 +267,7 @@ RCAS_Dx12::~RCAS_Dx12()
 
     DeferredRelease::Release(_pipelineStateDA);
     DeferredRelease::Release(_pipelineStateDASDA);
+    DeferredRelease::Release(_pipelineStateNeural);
 
     for (int i = 0; i < RCAS_NUM_OF_HEAPS; i++)
     {

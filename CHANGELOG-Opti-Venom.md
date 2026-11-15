@@ -10,7 +10,8 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream | |
 | --- | --- | --- | --- |
-| [**v0.3.1**](#v031) · [`opti-venom-v0.3.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3.1) | 2026-11-13 | [nightly-20261113](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261113) = [`5f69a25d`](https://github.com/optiscaler/OptiScaler/commit/5f69a25d60cdd4f99d48ea54893972b227ddf583) (2026-11-12) | Latest |
+| [**v0.4**](#v04) · [`opti-venom-v0.4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4) | 2026-11-15 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) | Latest |
+| [v0.3.1](#v031) · [`opti-venom-v0.3.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3.1) | 2026-11-13 | [nightly-20261113](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261113) = [`5f69a25d`](https://github.com/optiscaler/OptiScaler/commit/5f69a25d60cdd4f99d48ea54893972b227ddf583) (2026-11-12) |  |
 | [v0.3](#v03) · [`opti-venom-v0.3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3) | 2026-11-01 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) |  |
 | [v0.2.1](#v021) · [`opti-venom-v0.2.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2.1) | 2026-10-31 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) |  |
 | [v0.2](#v02) · [`opti-venom-v0.2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2) | 2026-10-25 | [nightly-20261025](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261025) = [`08e13adf`](https://github.com/optiscaler/OptiScaler/commit/08e13adf55b3fd71a67071eac2e95973ac598df3) (2026-10-24) |  |
@@ -20,9 +21,39 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 | [v0.2 beta 1](#v02-beta-1) · [`opti-venom-v0.2-beta1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta1) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | Pre-release |
 | [v0.1](#v01) · [`opti-venom-v0.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.1) | 2026-10-24 | [`539c9a1e`](https://github.com/optiscaler/OptiScaler/commit/539c9a1ecd2c37bee1980d0f0645919cab837855) (2026-10-24) | |
 
-Daily automatic builds, not tested, are listed under [Nightly builds](#nightly-builds).
+Automatic builds of every new official nightly, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.4
+
+> OptiScaler `10.0.0.1` (development build after `v0.9.4`), built on the latest official nightly [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = upstream `master` [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc).
+
+### New
+- **Neural sharpening** (Sharpness → Method → *Neural (Barbatos)*, `[Sharpness] Shader=neural`): a port of Barbatos' *Neural Sharpen* for ReShade (MIT): its small network and the trained weights of Model A (standard) and Model B (edge-enhanced), the edge response and the suppression of aliased edges and fireflies. Like RCAS and DA it sharpens the upscaler's output before the game draws its HUD, so the HUD stays untouched. HDR inputs go through a Reinhard and gamma curve so the network sees perceptual luma; Motion Adaptive Sharpness works with it. D3D11, D3D12 and Vulkan, precompiled; falls back to RCAS if its shader can't be made. Keys `[CAS] NeuralModel`, `NeuralEdgeResponse`.
+- **Base FPS switch** (OSD Options → *Base FPS*, `FpsOverlayShowBaseFps`): off shows only the output frame rate, generated frames included, instead of output/real.
+- **Venom Strip** and **Hybrid** OSD presets: the playing metrics in a compact strip at the top center; every metric in Hybrid Launcher's crimson, ivory and charcoal.
+
+### Changed
+- **Venom presets** (*Venom*, *Venom Style*, *Venom Strip*, *Hybrid*) set every OSD setting (type, rows, scale, position, font, text, colors, background, shadow, metrics and graphs) and always switch the overlay to *Custom*: they look the same whatever was set before.
+- Built on nightly-20261115: upstream's new resource copy shader replaced the one dashdogy's Vulkan XeFG changed, the same fix (storage image without a fixed format) moved there. Upstream's measured base FPS replaces Venom's computed one.
+
+### From upstream (nightly-20261115)
+- Frame generation: base FPS with Nvngx FG as input, Nvngx FG in the Status tab, Unity FG settings, crash on exit with Nvngx FG replacements, DLSSG options from the Streamline plugin in use.
+- DLSS subrects cropped for the FFX / FSR 2 / FSR 3.1 backends (D3D11, D3D12, Vulkan, D3D11-on-D3D12 bridge); Split Fiction pads smaller upscale sizes.
+- Compatibility: NVIDIA GPUs without a display on dxvk-nvapi, Optimus queue check, no exe entry hook with TLS callbacks, game quirks, clearer spoof status.
+- Stability: D3D11 resource copy and shader view fixes, Dx11wDx12 FG swapchain color space, no loader lock under a Streamline mutex, ini defaults matching the code.
+
+### Upgrading
+- Nothing to do: ini files and settings codes keep working. New keys: `[Sharpness] Shader=neural`, `[CAS] NeuralModel`, `NeuralEdgeResponse`, `[Menu] FpsOverlayShowBaseFps`.
+
+### Who to ask
+
+| Change | From | Ask |
+| --- | --- | --- |
+| Neural sharpening (port; network and weights by [Barbatos](https://github.com/BarbatosAWLS/Reshade-Shaders), MIT), Base FPS switch, reworked presets, Venom Strip and Hybrid | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG in Vulkan games | **dashdogy** | [dashdogy](https://github.com/dashdogy) on [PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240) |
+| Everything else | **Upstream** nightly-20261115 `ccf3b8c6` | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.3.1
 

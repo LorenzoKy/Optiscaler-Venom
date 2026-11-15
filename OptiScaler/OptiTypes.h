@@ -94,7 +94,8 @@ enum class SharpenShader
 {
     RCAS,
     DepthAware,
-    LocalContrastDepthAware
+    LocalContrastDepthAware,
+    Neural
 };
 
 template <> struct EnumConfig<SharpenShader>
@@ -104,7 +105,8 @@ template <> struct EnumConfig<SharpenShader>
     static constexpr std::pair<SharpenShader, std::string_view> mapping[] = { { SharpenShader::RCAS, "rcas" },
                                                                               { SharpenShader::DepthAware, "da" },
                                                                               { SharpenShader::LocalContrastDepthAware,
-                                                                                "lcda" } };
+                                                                                "lcda" },
+                                                                              { SharpenShader::Neural, "neural" } };
 };
 
 enum class FSR4Support : uint8_t

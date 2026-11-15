@@ -19,6 +19,7 @@ class RCAS_Vk : public Shader_Vk, public RCAS_Common
 
     VkPipeline _pipelineDA = VK_NULL_HANDLE;
     VkPipeline _pipelineDASDA = VK_NULL_HANDLE;
+    VkPipeline _pipelineNeural = VK_NULL_HANDLE; // Same bindings as RCAS
 
     void UpdateDescriptorSet(VkDescriptorBufferInfo bufferInfo, int setIndex, VkImageView inputView,
                              VkImageView motionView, VkImageView outputView);
@@ -27,6 +28,8 @@ class RCAS_Vk : public Shader_Vk, public RCAS_Common
 
     bool DispatchRCAS(VkCommandBuffer InCmdList, RcasConstants InConstants, const VkImageInfo& InResourceInfo,
                       const VkImageInfo& InMotionVectorsInfo, const VkImageInfo& OutResourceInfo);
+    bool DispatchNeural(VkCommandBuffer InCmdList, RcasConstants InConstants, const VkImageInfo& InResourceInfo,
+                        const VkImageInfo& InMotionVectorsInfo, const VkImageInfo& OutResourceInfo);
 
     // Merged Dispatch for DA and DASDA
     bool DispatchDepthAdaptive(VkCommandBuffer InCmdList, RcasConstants InConstants, const VkImageInfo& InResourceInfo,

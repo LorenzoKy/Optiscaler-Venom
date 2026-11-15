@@ -18,6 +18,7 @@ class RCAS_Dx12 : public Shader_Dx12, public RCAS_Common
 
     ID3D12PipelineState* _pipelineStateDA = nullptr;
     ID3D12PipelineState* _pipelineStateDASDA = nullptr;
+    ID3D12PipelineState* _pipelineStateNeural = nullptr;
 
     uint32_t InNumThreadsX = 16;
     uint32_t InNumThreadsY = 16;
@@ -28,6 +29,9 @@ class RCAS_Dx12 : public Shader_Dx12, public RCAS_Common
                                ID3D12Resource* InResource, ID3D12Resource* InMotionVectors, ID3D12Resource* InDepth,
                                RcasConstants InConstants, ID3D12Resource* OutResource,
                                FrameDescriptorHeap& currentHeap);
+    bool DispatchNeural(ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource,
+                        ID3D12Resource* InMotionVectors, RcasConstants InConstants, ID3D12Resource* OutResource,
+                        FrameDescriptorHeap& currentHeap);
 
   public:
     bool CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource, D3D12_RESOURCE_STATES InState);

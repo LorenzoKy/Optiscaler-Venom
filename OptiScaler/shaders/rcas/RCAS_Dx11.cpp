@@ -6,6 +6,7 @@
 #include "precompile/RCAS_Shader_Dx11.h"
 #include "precompile/da_das_sharpen_Shader_Dx11.h"
 #include "precompile/da_rcas_sharpen_Shader_Dx11.h"
+#include "precompile/neural_sharpen_Shader_Dx11.h"
 
 #include <Config.h>
 
@@ -221,6 +222,64 @@ bool RCAS_Dx11::DispatchDASDepthAdaptive(ID3D11Device* InDevice, ID3D11DeviceCon
     return true;
 }
 
+bool RCAS_Dx11::DispatchNeural(ID3D11Device* InDevice, ID3D11DeviceContext* InContext, ID3D11Texture2D* InResource,
+                               ID3D11Texture2D* InMotionVectors, RcasConstants InConstants,
+                               ID3D11Texture2D* OutResource)
+{
+    (void) InDevice;
+
+    if (_computeShaderNeural == nullptr || !InitializeViews(InResource, InMotionVectors, OutResource))
+        return false;
+
+    InternalConstantsNeural constants {};
+
+    D3D11_TEXTURE2D_DESC outDesc {};
+    OutResource->GetDesc(&outDesc);
+    D3D11_TEXTURE2D_DESC mvsDesc {};
+    InMotionVectors->GetDesc(&mvsDesc);
+
+    constants.OutputWidth = (uint32_t) outDesc.Width;
+    constants.OutputHeight = outDesc.Height;
+    constants.MotionWidth = (uint32_t) mvsDesc.Width;
+    constants.MotionHeight = mvsDesc.Height;
+
+    FillMotionConstants(constants, InConstants);
+
+    D3D11_MAPPED_SUBRESOURCE mappedResource;
+    auto hr = InContext->Map(_constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+    if (FAILED(hr))
+    {
+        LOG_ERROR("[{0}] Map error {1:x}", _name, hr);
+
+        if (hr == DXGI_ERROR_DEVICE_REMOVED && _device != nullptr)
+            Util::GetDeviceRemovedReason(_device);
+
+        return false;
+    }
+
+    memcpy(mappedResource.pData, &constants, sizeof(constants));
+    InContext->Unmap(_constantBuffer, 0);
+
+    InContext->CSSetShader(_computeShaderNeural, nullptr, 0);
+    InContext->CSSetConstantBuffers(0, 1, &_constantBuffer);
+
+    ID3D11ShaderResourceView* srvs[2] = { _srvInput, _srvMotionVectors };
+    InContext->CSSetShaderResources(0, 2, srvs);
+    InContext->CSSetUnorderedAccessViews(0, 1, &_uavOutput, nullptr);
+
+    UINT dispatchWidth = (constants.OutputWidth + InNumThreadsX - 1) / InNumThreadsX;
+    UINT dispatchHeight = (constants.OutputHeight + InNumThreadsY - 1) / InNumThreadsY;
+
+    InContext->Dispatch(dispatchWidth, dispatchHeight, 1);
+
+    ID3D11UnorderedAccessView* nullUAV = nullptr;
+    InContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+    ID3D11ShaderResourceView* nullSRV[2] = { nullptr, nullptr };
+    InContext->CSSetShaderResources(0, 2, nullSRV);
+
+    return true;
+}
+
 bool RCAS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext, ID3D11Texture2D* InResource,
                          ID3D11Texture2D* InMotionVectors, RcasConstants InConstants, ID3D11Texture2D* OutResource,
                          ID3D11Texture2D* InDepth)
@@ -244,7 +303,15 @@ bool RCAS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext,
         (sharpnessShader == SharpenShader::LocalContrastDepthAware || sharpnessShader == SharpenShader::DepthAware))
         sharpnessShader = SharpenShader::RCAS;
 
-    if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
+    // Neural falls back to RCAS when its shader couldn't be made
+    if (sharpnessShader == SharpenShader::Neural && _computeShaderNeural == nullptr)
+        sharpnessShader = SharpenShader::RCAS;
+
+    if (sharpnessShader == SharpenShader::Neural)
+    {
+        return DispatchNeural(InDevice, InContext, InResource, InMotionVectors, InConstants, OutResource);
+    }
+    else if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
     {
         return DispatchDASDepthAdaptive(InDevice, InContext, InResource, InMotionVectors, InDepth, InConstants,
                                         OutResource);
@@ -298,6 +365,15 @@ RCAS_Dx11::RCAS_Dx11(std::string InName, ID3D11Device* InDevice) : Shader_Dx11(I
         return;
     }
 
+    // Optional, Neural uses RCAS without it
+    result = CreateComputeShader(InDevice, _computeShaderNeural, reinterpret_cast<const void*>(neural_sharpen_cso),
+                                 sizeof(neural_sharpen_cso), neuralSharpenCode.c_str());
+    if (FAILED(result))
+    {
+        LOG_ERROR("[{0}] CreateComputeShader error for Neural shader: {1:X}", _name, result);
+        _computeShaderNeural = nullptr;
+    }
+
     // CBV
     D3D11_BUFFER_DESC cbDesc = {};
     cbDesc.Usage = D3D11_USAGE_DYNAMIC;
@@ -322,8 +398,9 @@ RCAS_Dx11::~RCAS_Dx11()
 
     SAFE_RELEASE(_computeShaderDA);
     SAFE_RELEASE(_computeShaderDASDA);
+    SAFE_RELEASE(_computeShaderNeural);
     SAFE_RELEASE(_srvMotionVectors);
     SAFE_RELEASE(_srvDepth);
-    SAFE_RELEASE(_currentMotionVectors);
-    SAFE_RELEASE(_currentDepth);
+
+    // _currentMotionVectors/_currentDepth are only cache keys, InitializeSRV holds no reference on them
 }

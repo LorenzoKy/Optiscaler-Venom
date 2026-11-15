@@ -12,7 +12,7 @@
 <div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
-  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.3.1-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
+  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.4-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
   <a href="https://discord.com/channels/995299945492008990/1563930670018076843"><img src="https://img.shields.io/badge/Discord-Opti%20Venom%20thread-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Opti Venom thread on Discord"></a>
   <a href="https://github.com/optiscaler/OptiScaler"><img src="https://img.shields.io/badge/Based%20on-OptiScaler-64748b?style=for-the-badge&logo=github" alt="Based on OptiScaler"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-64748b?style=for-the-badge" alt="GPL-3.0"></a>
@@ -88,7 +88,8 @@ Menu → **FPS Overlay**:
   - **Hardware**: model names, CPU & GPU usage, GPU and CPU hotspot, game RAM, commit charge.
   - **Graphs**: one switch per graph. Each graph shows under its row while that row is on: frame time, upscaler time (on by default, like OptiScaler), FG time and **PC latency** (off by default, the last 18 seconds). They are not rows of their own any more.
 - **Latency Type**: PC latency (experimental, meant to match FrameView / PresentMon's, usually within a few ms), render latency or both. Needs a game with Reflex, XeLL or AntiLag 2.
-- **Appearance**: presets (*Default*, *Classic*, *Afterburner-Like*, *Strip*, plus Venom's plug and play *Venom* (every Venom metric) and *Venom Style* (the same metrics with Venom's own font, colors, shadow and panel)), font, size, colors, shadow or outline, background, corners, position.
+- **Appearance**: presets (*Default*, *Classic*, *Afterburner-Like*, *Strip*, plus Venom's plug and play ones: *Venom* (every Venom metric), *Venom Style* (the same with Venom's own font, colors and graphs), *Venom Strip* (the playing metrics in a compact strip at the top center) and *Hybrid* (every metric in Hybrid Launcher's colors)), font, size, colors, shadow or outline, background, corners, position. A Venom preset sets every OSD setting and switches the overlay to *Custom*.
+- **Base FPS** (OSD Options): with frame generation the FPS row shows output/real (`120.0/60.0`); off shows only the output frame rate.
 - **Share Settings**: **Copy Code** puts your whole OSD in the clipboard, **Paste Code** applies someone else's. Share yours in the [Discord thread](#-discord).
 
 Every option is also an `FpsOverlay*` key in `OptiScaler.ini`, each one documented there.
@@ -100,6 +101,10 @@ Turn on **Frame Generation Time** (in **Rows → More Rows in Presets**, or in C
 ### 🌈 HDR
 
 Nothing to set: on D3D12 games with HDR output (HDR10 or scRGB) the OptiScaler menu and the OSD are converted to the game's HDR format, with the same colors and transparency as in SDR, instead of looking washed out. SDR games and D3D11 / Vulkan games keep the usual drawing.
+
+### 🔪 Neural sharpening
+
+Sharpness → **Method** → **Neural (Barbatos)** (`[Sharpness] Shader=neural`): a small neural network ported from Barbatos' *Neural Sharpen* for ReShade. It only touches the luma and skips aliased edges and fireflies. Like RCAS it sharpens the upscaler's output, **before the game draws its HUD**, so menus and text stay as they are. **Neural Parameters**: Model A (standard) or B (edge-enhanced) and **Edge Response** (negative smooths edges, positive enhances them). Strength 0.5 is the ReShade default; Motion Adaptive Sharpness works with it. D3D11, D3D12 and Vulkan, HDR included.
 
 ### 🌋 XeFG in Vulkan games
 
@@ -165,6 +170,7 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 | `[XeFG] Vulkan` switch and safer Vulkan presents | [v0.2 beta 4][b4] | **Venom** |
 | OSD Options columns, graph switches, PC latency graph, Upscale Inputs on the Upscale row | [v0.2][v0.2] | **Venom** |
 | HDR menu and OSD on D3D12, more accurate XeFG time, Venom and Venom Style OSD presets | [v0.3][v0.3] | **Venom** |
+| Neural sharpening (network and weights by [Barbatos](https://github.com/BarbatosAWLS/Reshade-Shaders), MIT), Base FPS switch, Venom presets that set every setting, Venom Strip and Hybrid presets | [v0.4][v0.4] | **Venom** |
 | XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240), commits marked `Venom-Part: dashdogy`) | [v0.2 beta 4][b4] | **dashdogy** |
 | OSD customization (fonts, colors, presets, settings codes), Custom overlay type, upscale ratio row | upstream `master`, started in Venom ([PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238)) | **Upstream** |
 | Custom upscalers (`OptiScaler\custom` folder), in place of Venom's Extra dlls | nightly 2026-10-29 | **Upstream** |
@@ -177,6 +183,7 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 [b4]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2-beta4
 [v0.2]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2
 [v0.3]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3
+[v0.4]: https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4
 
 ## 🛟 Who to ask
 
@@ -197,7 +204,7 @@ Issues about upstream or third-party code may be closed with a pointer to the ri
 > [!WARNING]
 > Releases are built on the latest **official OptiScaler nightly**, not on newer upstream commits.
 >
-> **Nobody tests the Venom nightlies.** If upstream breaks something that day, the nightly breaks too; if upstream's changes conflict with Venom's, there's no nightly that day. Every release has that day's official nightly in it and every nightly has the latest release. Only the last 14 are kept; the list is in the [changelog](CHANGELOG-Opti-Venom.md#nightly-builds).
+> **Nobody tests the Venom nightlies.** If upstream breaks something that day, the nightly breaks too; if upstream's changes conflict with Venom's, there's no nightly until the conflict is solved. Every release has the latest official nightly in it and every nightly has the latest release. Only the last 14 are kept; the list is in the [changelog](CHANGELOG-Opti-Venom.md#nightly-builds).
 
 ## 💬 Discord
 
@@ -208,6 +215,7 @@ The **[Opti Venom thread](https://discord.com/channels/995299945492008990/156393
 - **[OptiScaler](https://github.com/optiscaler/OptiScaler)** and its team and contributors (cdozdil, FakeMichau, TheRazerMD and everyone else): this build is entirely based on their work. If you like it, [support OptiScaler](https://github.com/sponsors/cdozdil?frequency=one-time).
 - **[LorenzoKy](https://github.com/LorenzoKy)**: the Venom features and builds, and the FPS OSD rework of OptiScaler v10 ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
 - **[dashdogy](https://github.com/dashdogy)**: XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240)).
+- **[Barbatos](https://github.com/BarbatosAWLS/Reshade-Shaders)**: the network and trained weights of *Neural Sharpen* (MIT), which Venom's Neural sharpening is ported from.
 - The third-party libraries and SDKs OptiScaler uses, listed in the [original README](README-OptiScaler.md).
 
 ## ☕ Support

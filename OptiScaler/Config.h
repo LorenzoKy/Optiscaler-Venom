@@ -382,6 +382,10 @@ class Config
     CustomOptional<float, NoDefault> DADepthBias;
     CustomOptional<bool, NoDefault> DAClampOutput;
 
+    // Neural sharpening
+    CustomOptional<int> NeuralSharpenModel { 0 };             // 0 Model A (standard), 1 Model B (edge-enhanced)
+    CustomOptional<float> NeuralSharpenEdgeResponse { 0.0f }; // -1.0 smooths the edges, 1.0 enhances them
+
     // MAS
     CustomOptional<bool> MotionSharpnessEnabled { false };
     CustomOptional<bool> MotionSharpnessDebug { false };
@@ -435,6 +439,7 @@ class Config
     CustomOptional<bool> FpsOverlayShowCpuHotspot { false };   // The CPU's hottest core or CCD on its row
     CustomOptional<bool> FpsOverlayShowClock { false };        // Date and time row
     CustomOptional<bool> FpsOverlayShowSessionTimer { false }; // Time since OptiScaler started, on the FPS row
+    CustomOptional<bool> FpsOverlayShowBaseFps { true };       // With frame generation also the real frame rate
     CustomOptional<bool> FpsOverlayShowUpscalerName { true };  // Input -> upscaler and its version, Upscale or FPS row
     // A graph row also needs its switch, on any overlay type
     CustomOptional<bool> FpsOverlayShowFrameTimeGraph { true };
@@ -803,7 +808,6 @@ class Config
     // https://github.com/artur-graniszewski/dlss-enabler-main/blob/a92464d468eb0d91ae17befa66c6bf6229f20b9f/Utils/DlssgProxy.cpp#L1033
     CustomOptional<uint32_t> NvngxFGDispatchFlags { 0x10000000 }; // IGNORE_UI_TEXTURE
     CustomOptional<bool> NvngxFGShowDebug { false };
-    CustomOptional<bool> NvngxFGDisableHudless { false };
 
     // fakenvapi
     CustomOptional<bool, SoftDefault> UseFakenvapi { true };

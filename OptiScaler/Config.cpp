@@ -449,7 +449,10 @@ bool Config::Reload(std::filesystem::path iniPath)
 
             NvngxFGDispatchFlags.set_from_config(readUInt("NvngxFG", "DispatchFlags"));
             NvngxFGShowDebug.set_from_config(readBool("NvngxFG", "ShowDebug"));
-            NvngxFGDisableHudless.set_from_config(readBool("NvngxFG", "DisableHudless"));
+
+            // Older configs keep it in [NvngxFG], it only applied with DLSSG via Nvngx as FG Input
+            if (FGInput.value_or_default() == FGInput::NvngxFG)
+                FGDisableHudless.set_from_config(readBool("NvngxFG", "DisableHudless"));
         }
 
         // Logging
@@ -581,6 +584,12 @@ bool Config::Reload(std::filesystem::path iniPath)
             DADepthScale.set_from_config(readFloat("CAS", "DADepthScale"));
             DADepthBias.set_from_config(readFloat("CAS", "DADepthBias"));
             DAClampOutput.set_from_config(readBool("CAS", "DAClampOutput"));
+
+            if (auto setting = readInt("CAS", "NeuralModel"); setting.has_value())
+                NeuralSharpenModel.set_from_config(std::clamp(setting.value(), 0, 1));
+
+            if (auto setting = readFloat("CAS", "NeuralEdgeResponse"); setting.has_value())
+                NeuralSharpenEdgeResponse.set_from_config(std::clamp(setting.value(), -1.0f, 1.0f));
 
             MotionSharpnessDebug.set_from_config(readBool("CAS", "SharpenerDebug"));
         }
@@ -1012,6 +1021,7 @@ static const OverlayIniKey venomOverlayIniKeys[] = {
     { "FpsOverlayShowUpscalerTimeGraph", OverlayValueType::Bool },
     { "FpsOverlayShowFGTimeGraph", OverlayValueType::Bool },
     { "FpsOverlayShowLatencyGraph", OverlayValueType::Bool },
+    { "FpsOverlayShowBaseFps", OverlayValueType::Bool },
 };
 static_assert(std::size(overlayIniKeys) <= venomKeyBase && venomKeyBase + std::size(venomOverlayIniKeys) <= 0x100);
 
@@ -1091,6 +1101,7 @@ void Config::ReadOverlaySettings(bool assign)
     apply(FpsOverlayShowCpuHotspot, readBool("Menu", "FpsOverlayShowCpuHotspot"));
     apply(FpsOverlayShowClock, readBool("Menu", "FpsOverlayShowClock"));
     apply(FpsOverlayShowSessionTimer, readBool("Menu", "FpsOverlayShowSessionTimer"));
+    apply(FpsOverlayShowBaseFps, readBool("Menu", "FpsOverlayShowBaseFps"));
     apply(FpsOverlayShowUpscalerName, readBool("Menu", "FpsOverlayShowUpscalerName"));
     apply(FpsOverlayShowFrameTimeGraph, readBool("Menu", "FpsOverlayShowFrameTimeGraph"));
     apply(FpsOverlayShowUpscalerTimeGraph, readBool("Menu", "FpsOverlayShowUpscalerTimeGraph"));
@@ -1153,6 +1164,7 @@ void Config::WriteOverlaySettings()
     ini.SetValue("Menu", "FpsOverlayShowClock", GetBoolValue(FpsOverlayShowClock.value_for_config()).c_str());
     ini.SetValue("Menu", "FpsOverlayShowSessionTimer",
                  GetBoolValue(FpsOverlayShowSessionTimer.value_for_config()).c_str());
+    ini.SetValue("Menu", "FpsOverlayShowBaseFps", GetBoolValue(FpsOverlayShowBaseFps.value_for_config()).c_str());
     ini.SetValue("Menu", "FpsOverlayShowUpscalerName",
                  GetBoolValue(FpsOverlayShowUpscalerName.value_for_config()).c_str());
     ini.SetValue("Menu", "FpsOverlayShowFrameTimeGraph",
@@ -1856,8 +1868,6 @@ bool Config::SaveIni()
         ini.SetValue("NvngxFG", "DispatchFlags",
                      GetIntValue(Instance()->NvngxFGDispatchFlags.value_for_config(), true).c_str());
         ini.SetValue("NvngxFG", "ShowDebug", GetBoolValue(Instance()->NvngxFGShowDebug.value_for_config()).c_str());
-        ini.SetValue("NvngxFG", "DisableHudless",
-                     GetBoolValue(Instance()->NvngxFGDisableHudless.value_for_config()).c_str());
     }
 
     // Sharpness
@@ -1889,6 +1899,10 @@ bool Config::SaveIni()
         ini.SetValue("CAS", "DADepthScale", GetFloatValue(Instance()->DADepthScale.value_for_config()).c_str());
         ini.SetValue("CAS", "DADepthBias", GetFloatValue(Instance()->DADepthBias.value_for_config()).c_str());
         ini.SetValue("CAS", "DAClampOutput", GetBoolValue(Instance()->DAClampOutput.value_for_config()).c_str());
+
+        ini.SetValue("CAS", "NeuralModel", GetIntValue(Instance()->NeuralSharpenModel.value_for_config()).c_str());
+        ini.SetValue("CAS", "NeuralEdgeResponse",
+                     GetFloatValue(Instance()->NeuralSharpenEdgeResponse.value_for_config()).c_str());
 
         ini.SetValue("CAS", "SharpenerDebug",
                      GetBoolValue(Instance()->MotionSharpnessDebug.value_for_config()).c_str());

@@ -27,6 +27,35 @@ void RCAS_Common::FillMotionConstants(InternalConstants& OutConstants, const Rca
         OutConstants.MotionTextureScale = (float) OutConstants.MotionWidth / (float) OutConstants.OutputWidth;
 }
 
+void RCAS_Common::FillMotionConstants(InternalConstantsNeural& OutConstants, const RcasConstants& InConstants)
+{
+    // Like the depth aware shaders, 0.5 is the default Intensity (1.0) of the ReShade shader
+    OutConstants.Sharpness = InConstants.Sharpness * 2.0f;
+    OutConstants.EdgeResponse =
+        std::clamp(Config::Instance()->NeuralSharpenEdgeResponse.value_or_default(), -1.0f, 1.0f);
+    OutConstants.Model = std::clamp(Config::Instance()->NeuralSharpenModel.value_or_default(), 0, 1);
+
+    // HDR inputs are linear and go over 1.0, LDR ones stay in [0, 1]
+    OutConstants.IsHdr = InConstants.IsHdr ? 1 : 0;
+    OutConstants.ClampOutput = InConstants.IsHdr ? 0 : 1;
+
+    OutConstants.MvScaleX = InConstants.MvScaleX;
+    OutConstants.MvScaleY = InConstants.MvScaleY;
+
+    OutConstants.DynamicSharpenEnabled = Config::Instance()->MotionSharpnessEnabled.value_or_default() ? 1 : 0;
+    OutConstants.Debug = Config::Instance()->MotionSharpnessDebug.value_or_default() ? 1 : 0;
+    OutConstants.MotionSharpness = Config::Instance()->MotionSharpness.value_or_default();
+    OutConstants.MotionThreshold = Config::Instance()->MotionThreshold.value_or_default();
+    OutConstants.MotionScaleLimit = Config::Instance()->MotionScaleLimit.value_or_default();
+
+    OutConstants.DisplaySizeMV = OutConstants.MotionWidth == OutConstants.OutputWidth ? 1 : 0;
+
+    if (OutConstants.DisplaySizeMV)
+        OutConstants.MotionTextureScale = 1.0f;
+    else
+        OutConstants.MotionTextureScale = (float) OutConstants.MotionWidth / (float) OutConstants.OutputWidth;
+}
+
 void RCAS_Common::FillMotionConstants(InternalConstantsDA& OutConstants, const RcasConstants& InConstants)
 {
     OutConstants.Sharpness = InConstants.Sharpness * 2.0f;
