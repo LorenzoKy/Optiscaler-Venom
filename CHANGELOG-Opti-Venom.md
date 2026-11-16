@@ -10,7 +10,8 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream | |
 | --- | --- | --- | --- |
-| [**v0.4**](#v04) · [`opti-venom-v0.4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4) | 2026-11-15 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) | Latest |
+| [**v0.4.1**](#v041) · [`opti-venom-v0.4.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4.1) | 2026-11-16 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) | Latest |
+| [v0.4](#v04) · [`opti-venom-v0.4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4) | 2026-11-15 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) |  |
 | [v0.3.1](#v031) · [`opti-venom-v0.3.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3.1) | 2026-11-13 | [nightly-20261113](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261113) = [`5f69a25d`](https://github.com/optiscaler/OptiScaler/commit/5f69a25d60cdd4f99d48ea54893972b227ddf583) (2026-11-12) |  |
 | [v0.3](#v03) · [`opti-venom-v0.3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3) | 2026-11-01 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) |  |
 | [v0.2.1](#v021) · [`opti-venom-v0.2.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.2.1) | 2026-10-31 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) |  |
@@ -24,6 +25,30 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 Automatic builds of every new official nightly, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.4.1
+
+> OptiScaler `10.0.0.1` (development build after `v0.9.4`), built on the latest official nightly [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = upstream `master` [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc), the same as v0.4. Fixes for v0.4.
+
+### Fixed
+- **Neural sharpening washed the image out** with float images sent without the HDR flag (from before the game's tonemapper; Marvel's Spider-Man 2 sends `R11G11B10_FLOAT` through FFX): they were clamped to 1.0, cutting the highlights before the game's exposure and bloom. Float inputs now take the linear path like HDR ones and aren't clamped; unorm inputs stay in [0, 1].
+- **Neural sharpening greyed colors**: the sharpened luma was added to every channel, which mixes grey into linear colors. Now every channel is scaled by the same gain, like RCAS, keeping hue and saturation; the gain stops at 2x so near black noise doesn't turn into colored dots.
+- **Venom presets too small** above 1080p: they set `FpsScale=1`; the scale is now left to the menu's, like the other presets.
+- **Per shader GPU times** listed every sharpener as *RCAS*: the time now carries the name of the shader that ran, after the fallbacks (*RCAS*, *Depth Aware (RCAS)*, *Depth Aware (DAS)*, *Neural*).
+
+### Changed
+- Neural sharpening logs its input format and the path it takes when they change.
+
+### Upgrading
+- Nothing to do: no new keys. Apply a Venom preset again to get its new size.
+
+### Who to ask
+
+| Change | From | Ask |
+| --- | --- | --- |
+| Neural sharpening fixes, Venom preset scale, sharpener GPU time name | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG in Vulkan games | **dashdogy** | [dashdogy](https://github.com/dashdogy) on [PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240) |
+| Everything else | **Upstream** nightly-20261115 `ccf3b8c6` | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.4
 

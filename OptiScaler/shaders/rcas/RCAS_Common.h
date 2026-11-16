@@ -7,6 +7,8 @@
 #include "shaders/NEURAL_Shader.h"
 #include "shaders/RCAS_Shader.h"
 
+#include <atomic>
+
 struct RcasConstants
 {
     float Sharpness;
@@ -25,7 +27,14 @@ struct RcasConstants
 
 class RCAS_Common
 {
+  public:
+    // The sharpening shader that ran last, its GPU time is shown under this name
+    const char* TimedShaderName() const { return _timedShaderName.load(std::memory_order_relaxed); }
+
   protected:
+    // Called by Dispatch with the shader it runs, after the fallbacks
+    void SetTimedShader(SharpenShader InShader);
+
     struct alignas(256) InternalConstants
     {
         float Sharpness;
@@ -119,5 +128,17 @@ class RCAS_Common
 
     void FillMotionConstants(InternalConstants& OutConstants, const RcasConstants& InConstants);
     void FillMotionConstants(InternalConstantsDA& OutConstants, const RcasConstants& InConstants);
-    void FillMotionConstants(InternalConstantsNeural& OutConstants, const RcasConstants& InConstants);
+    // Float formats can hold values over 1.0 (linear, before the tonemapper)
+    static bool IsFloatFormat(DXGI_FORMAT InFormat);
+
+    // InputFormat is the DXGI or Vulkan format of the sharpened image, only for the log
+    void FillMotionConstants(InternalConstantsNeural& OutConstants, const RcasConstants& InConstants, bool InputIsFloat,
+                             uint32_t InputFormat);
+
+  private:
+    std::atomic<const char*> _timedShaderName { "RCAS" };
+
+    // Last input logged by the neural shader, logged again when it changes
+    int64_t _neuralLoggedFormat = -1;
+    bool _neuralLoggedLinear = false;
 };

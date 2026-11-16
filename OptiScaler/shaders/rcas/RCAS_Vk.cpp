@@ -232,7 +232,25 @@ bool RCAS_Vk::DispatchNeural(VkCommandBuffer InCmdList, RcasConstants InConstant
     constants.OutputHeight = OutResourceInfo.Height;
     constants.MotionWidth = InMotionVectorsInfo.Width;
     constants.MotionHeight = InMotionVectorsInfo.Height;
-    FillMotionConstants(constants, InConstants);
+
+    // Float formats can hold values over 1.0 (linear, before the tonemapper)
+    bool inputIsFloat = false;
+
+    switch (InResourceInfo.Format)
+    {
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+    case VK_FORMAT_R32G32B32_SFLOAT:
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case VK_FORMAT_R16G16B16_SFLOAT:
+    case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
+        inputIsFloat = true;
+        break;
+    default:
+        break;
+    }
+
+    FillMotionConstants(constants, InConstants, inputIsFloat, (uint32_t) InResourceInfo.Format);
 
     _currentSetIndex = (_currentSetIndex + 1) % _maxFramesInFlight;
     UpdateDescriptorSet(WriteConstants(&constants, sizeof(InternalConstantsNeural)), _currentSetIndex,
@@ -306,6 +324,8 @@ bool RCAS_Vk::Dispatch(VkDevice InDevice, VkCommandBuffer InCmdList, RcasConstan
     // Neural falls back to RCAS when its pipeline couldn't be made
     if (sharpnessShader == SharpenShader::Neural && _pipelineNeural == VK_NULL_HANDLE)
         sharpnessShader = SharpenShader::RCAS;
+
+    SetTimedShader(sharpnessShader);
 
     if (sharpnessShader == SharpenShader::Neural)
     {

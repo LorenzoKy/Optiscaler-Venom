@@ -120,7 +120,8 @@ bool RCAS_Dx12::DispatchNeural(ID3D12GraphicsCommandList* InCmdList, ID3D12Resou
     constants.MotionWidth = (uint32_t) mvsDesc.Width;
     constants.MotionHeight = mvsDesc.Height;
 
-    FillMotionConstants(constants, InConstants);
+    const auto inFormat = InResource->GetDesc().Format;
+    FillMotionConstants(constants, InConstants, IsFloatFormat(inFormat), (uint32_t) inFormat);
 
     if (!CreateConstantsBuffer(_device, currentHeap, constants, currentHeap.GetCbvCPU(0)))
     {
@@ -188,6 +189,8 @@ bool RCAS_Dx12::Dispatch(ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* I
     // Neural falls back to RCAS when its pipeline couldn't be made
     if (sharpnessShader == SharpenShader::Neural && _pipelineStateNeural == nullptr)
         sharpnessShader = SharpenShader::RCAS;
+
+    SetTimedShader(sharpnessShader);
 
     if (sharpnessShader == SharpenShader::Neural)
     {

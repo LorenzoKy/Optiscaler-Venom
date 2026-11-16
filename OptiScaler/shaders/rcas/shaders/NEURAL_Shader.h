@@ -11,8 +11,8 @@ static std::string neuralSharpenCode = R"(
 // the suppression of aliased edges and fireflies of the original.
 //
 // Runs on the upscaler's output, before the game draws its HUD, like the other sharpeners of OptiScaler.
-// HDR inputs (linear, above 1.0) go through a Reinhard and gamma curve first, so the network sees the
-// perceptual luma it was trained on.
+// HDR and float inputs (linear, can go above 1.0) go through a Reinhard and gamma curve first, so the network
+// sees the perceptual luma it was trained on.
 
 #ifdef VK_MODE
 cbuffer Params : register(b0, space0)
@@ -437,9 +437,25 @@ void CSMain(uint3 DTid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID, uin
 
         residual *= 1.0 - saturate(aliasingSignal + fireflySignal);
 
-        // The new luma, back in the input's range. All channels move together like the YCbCr of the original
+        // The new luma, back in the input's range. Like RCAS, each channel is scaled by the same factor, which
+        // keeps the ratios between them and so the hue and saturation. Adding the luma difference to every
+        // channel, as the YCbCr of the original does on a gamma backbuffer, mixes grey into linear colors
+        // and washes them out
+        const float oldLuma = DecodeLuma(lumaC);
         const float newLuma = DecodeLuma(max(0.0, lumaC + residual * intensity));
-        color = max(color + (newLuma - DecodeLuma(lumaC)), 0.0);
+
+        // At most twice as bright, so near black pixels don't blow their noise up into colored dots. What the
+        // gain can't reach is added as grey: those pixels have almost no color to keep
+        float gain = min(newLuma / max(oldLuma, 1e-6), 2.0);
+        const float grey = max(newLuma - oldLuma * gain, 0.0);
+
+        color = max(color, 0.0);
+
+        // Display ready images stay within 1.0 by lowering the gain instead of clipping single channels
+        if (IsHdr == 0)
+            gain = min(gain, 1.0 / max(max(color.r, max(color.g, color.b)), 1e-4));
+
+        color = color * gain + grey;
     }
 
     if (Debug > 0 && DynamicSharpenEnabled > 0)

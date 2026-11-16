@@ -9784,7 +9784,8 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                   "Pos=4;Type=7;Horizontal=true;Rows=upscale,-frametime,-frametimegraph,fps,upscaler,"
                   "-upscalergraph,-lowlatency;FpsRow=1;Alpha=0.12;Font=unispace bd.ttf;ValueColor=0xC9DF21;"
                   "ShadowStrength=0.59;ShadowColor=0x866767;Rounding=7;HideAverages=true" },
-                // The Venom presets list every overlay setting, nothing is left to the defaults or the ini
+                // The Venom presets list every overlay setting but the scale, nothing else is left to the defaults
+                // or the ini. The scale follows the menu's like the other presets, so they grow with the resolution
                 { "Venom",
                   "Every Venom metric, clean and readable: Custom rows with FPS, lows and base FPS,\n"
                   "upscaler, PC and render latency, FG time, bottleneck, VRAM, GPU, CPU and RAM\n"
@@ -9792,7 +9793,7 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                   "OverlaysUseTheme=false;Pos=0;Type=7;Horizontal=false;ShowRatio=true;CompactLabels=false;"
                   "Rows=fps,upscale,frametime,frametimegraph,upscaler,-upscalergraph,latency,-latencygraph,"
                   "fgtime,-fgtimegraph,bottleneck,vram,gpu,cpu,ram,-clock,-lowlatency;FpsRow=2;RowSpacing=3;"
-                  "UpdateInterval=250;Alpha=0.55;FpsScale=1;GraphHeight=1;PosX=0;PosY=0;Font=segoeui.ttf;"
+                  "UpdateInterval=250;Alpha=0.55;GraphHeight=1;PosX=0;PosY=0;Font=segoeui.ttf;"
                   "FontSize=15;LetterSpacing=0;LabelScale=0.9;ValueScale=1;LabelColor=0xB8C0CC;"
                   "ValueColor=0xFFFFFF;GraphColor=0x5CFF9D;BGColor=0x101317;Shadow=1;ShadowStrength=0.5;"
                   "ShadowColor=0x000000;Rounding=6;HideAverages=false;ShowLows=true;ShowLatency=true;"
@@ -9809,7 +9810,7 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                   "OverlaysUseTheme=false;Pos=0;Type=7;Horizontal=false;ShowRatio=true;CompactLabels=false;"
                   "Rows=fps,upscale,frametime,frametimegraph,upscaler,-upscalergraph,latency,latencygraph,"
                   "fgtime,fgtimegraph,bottleneck,vram,gpu,cpu,ram,-clock,-lowlatency;FpsRow=2;RowSpacing=4;"
-                  "UpdateInterval=250;Alpha=0.6;FpsScale=1;GraphHeight=1.2;PosX=0;PosY=0;Font=seguisb.ttf;"
+                  "UpdateInterval=250;Alpha=0.6;GraphHeight=1.2;PosX=0;PosY=0;Font=seguisb.ttf;"
                   "FontSize=15;LetterSpacing=0.2;LabelScale=0.85;ValueScale=1.05;LabelColor=0x8CE65A;"
                   "ValueColor=0xF2F5F7;GraphColor=0x5CFF9D;BGColor=0x0B0E12;Shadow=1;ShadowStrength=0.6;"
                   "ShadowColor=0x000000;Rounding=12;HideAverages=false;ShowLows=true;ShowLatency=true;"
@@ -9826,7 +9827,7 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                   "OverlaysUseTheme=false;Pos=4;Type=7;Horizontal=true;ShowRatio=false;CompactLabels=true;"
                   "Rows=fps,-upscale,frametime,-frametimegraph,-upscaler,-upscalergraph,latency,-latencygraph,"
                   "fgtime,-fgtimegraph,-bottleneck,vram,gpu,cpu,-ram,-clock,-lowlatency;FpsRow=2;RowSpacing=8;"
-                  "UpdateInterval=250;Alpha=0.45;FpsScale=1;GraphHeight=1;PosX=0.5;PosY=0;Font=seguisb.ttf;"
+                  "UpdateInterval=250;Alpha=0.45;GraphHeight=1;PosX=0.5;PosY=0;Font=seguisb.ttf;"
                   "FontSize=14;LetterSpacing=0.2;LabelScale=0.85;ValueScale=1.05;LabelColor=0xD0D6DE;"
                   "ValueColor=0x8CE65A;GraphColor=0x5CFF9D;BGColor=0x0B0E12;Shadow=1;ShadowStrength=0.6;"
                   "ShadowColor=0x000000;Rounding=10;HideAverages=true;ShowLows=true;ShowLatency=true;"
@@ -9842,7 +9843,7 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                   "OverlaysUseTheme=false;Pos=0;Type=7;Horizontal=false;ShowRatio=true;CompactLabels=false;"
                   "Rows=fps,upscale,frametime,frametimegraph,upscaler,-upscalergraph,latency,latencygraph,"
                   "fgtime,-fgtimegraph,bottleneck,vram,gpu,cpu,ram,-clock,-lowlatency;FpsRow=2;RowSpacing=4;"
-                  "UpdateInterval=250;Alpha=0.75;FpsScale=1;GraphHeight=1.1;PosX=0;PosY=0;Font=seguisb.ttf;"
+                  "UpdateInterval=250;Alpha=0.75;GraphHeight=1.1;PosX=0;PosY=0;Font=seguisb.ttf;"
                   "FontSize=15;LetterSpacing=0.1;LabelScale=0.85;ValueScale=1.05;LabelColor=0xD7143A;"
                   "ValueColor=0xF4EFE4;GraphColor=0xE0142B;BGColor=0x17181C;Shadow=1;ShadowStrength=0.5;"
                   "ShadowColor=0x000000;Rounding=10;HideAverages=false;ShowLows=true;ShowLatency=true;"
