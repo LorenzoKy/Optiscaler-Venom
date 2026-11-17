@@ -9,6 +9,7 @@
 #include "precompile/neural_sharpen_Shader_Dx11.h"
 
 #include <Config.h>
+#include <magic_enum.hpp>
 
 bool RCAS_Dx11::CreateBufferResource(ID3D11Device* InDevice, ID3D11Resource* InResource)
 {
@@ -245,7 +246,8 @@ bool RCAS_Dx11::DispatchNeural(ID3D11Device* InDevice, ID3D11DeviceContext* InCo
     constants.MotionWidth = (uint32_t) mvsDesc.Width;
     constants.MotionHeight = mvsDesc.Height;
 
-    FillMotionConstants(constants, InConstants, IsFloatFormat(inDesc.Format), (uint32_t) inDesc.Format);
+    FillMotionConstants(constants, InConstants, IsFloatFormat(inDesc.Format), (uint32_t) inDesc.Format,
+                        magic_enum::enum_name(inDesc.Format));
 
     D3D11_MAPPED_SUBRESOURCE mappedResource;
     auto hr = InContext->Map(_constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
@@ -298,22 +300,18 @@ bool RCAS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext,
 
     _device = InDevice;
 
-    auto sharpnessShader = Config::Instance()->SharpnessShader.value_or_default();
-
-    // Depth aware shaders fall back to plain RCAS without depth
-    if (InDepth == nullptr &&
-        (sharpnessShader == SharpenShader::LocalContrastDepthAware || sharpnessShader == SharpenShader::DepthAware))
-        sharpnessShader = SharpenShader::RCAS;
-
-    // Neural falls back to RCAS when its shader couldn't be made
-    if (sharpnessShader == SharpenShader::Neural && _computeShaderNeural == nullptr)
-        sharpnessShader = SharpenShader::RCAS;
+    auto sharpnessShader = ResolveShader(Config::Instance()->SharpnessShader.value_or_default(), InDepth != nullptr,
+                                         _computeShaderNeural != nullptr);
 
     SetTimedShader(sharpnessShader);
 
-    if (sharpnessShader == SharpenShader::Neural)
+    if (sharpnessShader == SharpenShader::BabaNeural)
     {
-        return DispatchNeural(InDevice, InContext, InResource, InMotionVectors, InConstants, OutResource);
+        if (DispatchNeural(InDevice, InContext, InResource, InMotionVectors, InConstants, OutResource))
+            return true;
+
+        SetTimedShader(SharpenShader::RCAS);
+        return DispatchRCAS(InDevice, InContext, InResource, InMotionVectors, InConstants, OutResource);
     }
     else if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
     {

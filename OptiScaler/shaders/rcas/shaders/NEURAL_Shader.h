@@ -2,6 +2,7 @@
 
 #include "SysUtils.h"
 
+// Split across two adjacent raw literals to stay under MSVC C2026 (16380-byte string literal limit)
 static std::string neuralSharpenCode = R"(
 // Neural sharpening for OptiScaler, a compute port of Barbatos' Neural Sharpen 2.8 for ReShade
 // https://github.com/BarbatosAWLS/Reshade-Shaders (BaBa_Sharpen_Neural.fx, MIT License, Copyright (c) Barbatos)
@@ -233,8 +234,6 @@ static const float4 ModelB_Mix_W[36] = {
 };
 static const float4 ModelB_Mix_B[3] = {
     float4(0.017644040, -0.120309018, -0.029212048, 0.068806812),
-)"
-                                       R"(
     float4(0.053569581, -0.141184986, 0.036499061, -0.027951837),
     float4(0.221204460, -0.030860605, 0.061900575, 0.100701667),
 };
@@ -266,10 +265,23 @@ int2 ClampMotionCoord(int2 p)
     return int2(clamp(p.x, 0, MotionWidth - 1), clamp(p.y, 0, MotionHeight - 1));
 }
 
+// Bit test: fxc -O3 can optimize isfinite/isnan away
+bool IsFinite(float x)
+{
+    return (asuint(x) & 0x7f800000) != 0x7f800000;
+}
+
+bool IsFinite3(float3 v)
+{
+    return IsFinite(v.x) && IsFinite(v.y) && IsFinite(v.z);
+}
+
 float Luma(float3 c)
 {
     return dot(max(c, 0.0), kLumaCoeff);
 }
+)"
+                                       R"(
 
 // Linear HDR luma to the 0..1 perceptual range of the network and back
 float EncodeLuma(float y)
@@ -277,8 +289,8 @@ float EncodeLuma(float y)
     if (IsHdr == 0)
         return saturate(y);
 
-    y = max(y, 0.0);
-    return pow(y / (1.0 + y), 1.0 / 2.2);
+    y = min(max(y, 0.0), 65504.0);
+    return pow(1.0 - 1.0 / (1.0 + y), 1.0 / 2.2);
 }
 
 float DecodeLuma(float p)
@@ -286,7 +298,7 @@ float DecodeLuma(float p)
     if (IsHdr == 0)
         return p;
 
-    float l = pow(clamp(p, 0.0, 0.999), 2.2);
+    float l = pow(clamp(p, 0.0, 0.99999), 2.2);
     return l / (1.0 - l);
 }
 
@@ -294,13 +306,13 @@ float ComputeAdaptiveSharpness(int2 pixelCoord)
 {
     float setSharpness = Sharpness;
 
-    if (DynamicSharpenEnabled > 0)
+    if (DynamicSharpenEnabled > 0 && MotionWidth > 0 && MotionHeight > 0)
     {
         int2 mvCoord = pixelCoord;
 
         // Lower resolution motion: the output pixel center in motion texture space
         if (DisplaySizeMV == 0)
-            mvCoord = int2((float2(pixelCoord) + 0.5) * MotionTextureScale);
+            mvCoord = int2((float2(pixelCoord) + 0.5) * (float2(MotionWidth, MotionHeight) / float2(DisplayWidth, DisplayHeight)));
 
         float2 mv = Motion.Load(int3(ClampMotionCoord(mvCoord), 0)).rg;
         float motion = max(abs(mv.x * MvScaleX), abs(mv.y * MvScaleY));
@@ -363,18 +375,56 @@ float RunNet(float taps[9], const float4 LocalW[27], const float4 LocalB[3], con
     return result;
 }
 
+// Same network evaluated on a uniform 3x3 patch where every tap equals mean
+float RunNetFlat(float mean, const float4 LocalW[27], const float4 LocalB[3], const float4 LocalA[3],
+                 const float4 MixW[36], const float4 MixB[3], const float4 MixA[3], const float4 OutW[3], float OutBias)
+{
+    float4 l1[3] = { LocalB[0], LocalB[1], LocalB[2] };
+
+    [unroll]
+    for (int k = 0; k < 3; k++)
+    {
+        float4 sumW = LocalW[0 * 3 + k] + LocalW[1 * 3 + k] + LocalW[2 * 3 + k] + LocalW[3 * 3 + k] +
+                      LocalW[4 * 3 + k] + LocalW[5 * 3 + k] + LocalW[6 * 3 + k] + LocalW[7 * 3 + k] +
+                      LocalW[8 * 3 + k];
+        l1[k] = PRelu(l1[k] + mean * sumW, LocalA[k]);
+    }
+
+    float4 l2[3] = { MixB[0], MixB[1], MixB[2] };
+
+    [unroll]
+    for (int g = 0; g < 3; g++)
+    {
+        [unroll]
+        for (int b = 0; b < 3; b++)
+        {
+            const int w = g * 12 + b * 4;
+            l2[g] += float4(dot(l1[b], MixW[w + 0]), dot(l1[b], MixW[w + 1]), dot(l1[b], MixW[w + 2]),
+                            dot(l1[b], MixW[w + 3]));
+        }
+    }
+
+    float result = OutBias;
+
+    [unroll]
+    for (int o = 0; o < 3; o++)
+        result += dot(PRelu(l2[o], MixA[o]), OutW[o]);
+
+    return result;
+}
+
 [numthreads(16, 16, 1)]
 void CSMain(uint3 DTid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID, uint3 Gid : SV_GroupID,
             uint GIndex : SV_GroupIndex)
 {
     const int2 groupOrigin = int2(Gid.xy) * 16 - 1;
 
-    // 18x18 = 324 lumas from 256 threads
+    // 18x18 = 324 lumas from 256 threads; negative sentinel marks Inf/NaN so a broken pixel doesn't poison its 3x3
     for (uint i = GIndex; i < 18 * 18; i += 256)
     {
         const int2 local = int2(i % 18, i / 18);
         const float3 c = Source.Load(int3(ClampCoord(groupOrigin + local), 0)).rgb;
-        s_luma[local.y][local.x] = EncodeLuma(Luma(c));
+        s_luma[local.y][local.x] = IsFinite3(c) ? EncodeLuma(Luma(c)) : -1.0;
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -385,6 +435,13 @@ void CSMain(uint3 DTid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID, uin
         return;
 
     const float4 source = Source.Load(int3(pixel, 0));
+
+    if (!IsFinite3(source.rgb))
+    {
+        Dest[pixel] = source;
+        return;
+    }
+
     const int2 s = int2(GTid.xy) + 1;
 
     const float intensity = ComputeAdaptiveSharpness(pixel);
@@ -393,77 +450,108 @@ void CSMain(uint3 DTid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID, uin
     if (intensity > 0.0)
     {
         float taps[9];
+        float minT = 1e9;
+        float maxT = -1.0;
+        float mean = 0.0;
 
         [unroll]
         for (int y = -1; y <= 1; y++)
         {
             [unroll]
             for (int x = -1; x <= 1; x++)
-                taps[(y + 1) * 3 + (x + 1)] = s_luma[s.y + y][s.x + x];
+            {
+                const float v = s_luma[s.y + y][s.x + x];
+                taps[(y + 1) * 3 + (x + 1)] = v;
+                minT = min(minT, v);
+                maxT = max(maxT, v);
+                mean += v;
+            }
         }
 
-        float rawResidual;
+        if (minT >= 0.0)
+        {
+            mean /= 9.0;
 
-        if (Model == 1)
-            rawResidual = RunNet(taps, ModelB_Local_W, ModelB_Local_B, ModelB_Local_A, ModelB_Mix_W, ModelB_Mix_B,
-                                 ModelB_Mix_A, ModelB_Out_W, ModelB_Out_Bias);
-        else
-            rawResidual = RunNet(taps, ModelA_Local_W, ModelA_Local_B, ModelA_Local_A, ModelA_Mix_W, ModelA_Mix_B,
-                                 ModelA_Mix_A, ModelA_Out_W, ModelA_Out_Bias);
+            // Subtract the network's non-zero bias on a flat patch so dark linear areas aren't lifted
+            float rawResidual;
 
-        const float normalizedResidual = saturate(abs(rawResidual) * 2.63); // 2.63 ~ 1 / 0.38
+            if (Model == 1)
+                rawResidual = RunNet(taps, ModelB_Local_W, ModelB_Local_B, ModelB_Local_A, ModelB_Mix_W, ModelB_Mix_B,
+                                     ModelB_Mix_A, ModelB_Out_W, ModelB_Out_Bias) -
+                              RunNetFlat(mean, ModelB_Local_W, ModelB_Local_B, ModelB_Local_A, ModelB_Mix_W,
+                                         ModelB_Mix_B, ModelB_Mix_A, ModelB_Out_W, ModelB_Out_Bias);
+            else
+                rawResidual = RunNet(taps, ModelA_Local_W, ModelA_Local_B, ModelA_Local_A, ModelA_Mix_W, ModelA_Mix_B,
+                                     ModelA_Mix_A, ModelA_Out_W, ModelA_Out_Bias) -
+                              RunNetFlat(mean, ModelA_Local_W, ModelA_Local_B, ModelA_Local_A, ModelA_Mix_W,
+                                         ModelA_Mix_B, ModelA_Mix_A, ModelA_Out_W, ModelA_Out_Bias);
 
-        float residual = clamp(rawResidual, -0.5, 0.5) * 0.22;
+            const float normalizedResidual = saturate(abs(rawResidual) * 2.63); // 2.63 ~ 1 / 0.38
 
-        // Edge response: negative smooths the edges the network finds, positive enhances them
-        if (EdgeResponse < -0.001)
-            residual *= lerp(1.0, 1.0 - normalizedResidual, -EdgeResponse);
-        else if (EdgeResponse > 0.001)
-            residual *= lerp(1.0, 1.0 + normalizedResidual, EdgeResponse);
+            float residual = clamp(rawResidual, -0.5, 0.5) * 0.22;
 
-        // Aliased edges and fireflies get no sharpening
-        const float lumaC = taps[4];
-        const float lumaN = taps[1];
-        const float lumaW = taps[3];
-        const float lumaE = taps[5];
-        const float lumaS = taps[7];
+            // Edge response: negative smooths the edges the network finds, positive enhances them
+            if (abs(EdgeResponse) > 0.001)
+                residual *= 1.0 + EdgeResponse * normalizedResidual;
 
-        const float maxNeighbors = max(max(lumaN, lumaS), max(lumaE, lumaW));
-        const float minNeighbors = min(min(lumaN, lumaS), min(lumaE, lumaW));
+            // Aliased edges and fireflies get no sharpening
+            const float lumaC = taps[4];
+            const float lumaN = taps[1];
+            const float lumaW = taps[3];
+            const float lumaE = taps[5];
+            const float lumaS = taps[7];
 
-        const float aliasingSignal = saturate((maxNeighbors - minNeighbors - 0.25) * 4.0);
-        const float spike = max(max(0.0, lumaC - maxNeighbors), max(0.0, minNeighbors - lumaC));
-        const float fireflySignal = saturate((spike - 0.1) * 6.0);
+            const float maxNeighbors = max(max(lumaN, lumaS), max(lumaE, lumaW));
+            const float minNeighbors = min(min(lumaN, lumaS), min(lumaE, lumaW));
 
-        residual *= 1.0 - saturate(aliasingSignal + fireflySignal);
+            const float aliasingSignal = saturate((maxNeighbors - minNeighbors - 0.25) * 4.0);
+            const float spike = max(max(0.0, lumaC - maxNeighbors), max(0.0, minNeighbors - lumaC));
+            const float fireflySignal = saturate((spike - 0.1) * 6.0);
 
-        // The new luma, back in the input's range. Like RCAS, each channel is scaled by the same factor, which
-        // keeps the ratios between them and so the hue and saturation. Adding the luma difference to every
-        // channel, as the YCbCr of the original does on a gamma backbuffer, mixes grey into linear colors
-        // and washes them out
-        const float oldLuma = DecodeLuma(lumaC);
-        const float newLuma = DecodeLuma(max(0.0, lumaC + residual * intensity));
+            residual *= 1.0 - saturate(aliasingSignal + fireflySignal);
 
-        // At most twice as bright, so near black pixels don't blow their noise up into colored dots. What the
-        // gain can't reach is added as grey: those pixels have almost no color to keep
-        float gain = min(newLuma / max(oldLuma, 1e-6), 2.0);
-        const float grey = max(newLuma - oldLuma * gain, 0.0);
+            // Local 3x3 limiter prevents extreme overshoot and dark rings around HDR highlights
+            const float rangeT = max(maxT - minT, 1e-4);
+            const float targetPerc =
+                clamp(lumaC + residual * intensity, max(0.0, minT - rangeT * 0.40), maxT + rangeT * 0.40);
 
-        color = max(color, 0.0);
+            // Keep wide-gamut negative channels intact and scale non-negative RGB proportionally to preserve hue
+            const float3 floorC = min(color, 0.0);
+            const float3 nonNeg = max(color, 0.0);
+            const float oldLuma = Luma(nonNeg);
 
-        // Display ready images stay within 1.0 by lowering the gain instead of clipping single channels
-        if (IsHdr == 0)
-            gain = min(gain, 1.0 / max(max(color.r, max(color.g, color.b)), 1e-4));
+            float newLuma;
+            if (IsHdr != 0 && lumaC >= 0.9999 && residual >= 0.0)
+                newLuma = oldLuma;
+            else
+                newLuma = DecodeLuma(targetPerc);
 
-        color = color * gain + grey;
+            // At most twice as bright, so near black pixels don't blow their noise up into colored dots. What the
+            // gain can't reach is added as grey: those pixels have almost no color to keep
+            float gain = min(newLuma / max(oldLuma, 1e-6), 2.0);
+            if (IsHdr != 0 && oldLuma > 1.0)
+                gain = max(gain, 0.35);
+
+            float grey = max(newLuma - oldLuma * gain, 0.0);
+
+            // Display ready images stay within 1.0 without clipping single channels or injecting grey into pure colors
+            if (IsHdr == 0)
+            {
+                const float maxChannel = max(nonNeg.r, max(nonNeg.g, nonNeg.b));
+                gain = min(gain, 1.0 / max(maxChannel, 1e-4));
+                grey = min(grey, max(1.0 - maxChannel * gain, 0.0));
+            }
+
+            color = max(floorC, nonNeg * gain + grey);
+        }
     }
 
     if (Debug > 0 && DynamicSharpenEnabled > 0)
     {
         if (Sharpness < intensity)
-            color.r *= 1.0 + 6.0 * (intensity - Sharpness);
+            color.r *= 1.0 + 12.0 * (intensity - Sharpness);
         else
-            color.g *= 1.0 + 6.0 * (Sharpness - intensity);
+            color.g *= 1.0 + 12.0 * (Sharpness - intensity);
     }
 
     if (ClampOutput > 0)

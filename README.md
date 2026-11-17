@@ -12,7 +12,7 @@
 <div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
-  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.4.1-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
+  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.4.2-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
   <a href="https://discord.com/channels/995299945492008990/1563930670018076843"><img src="https://img.shields.io/badge/Discord-Opti%20Venom%20thread-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Opti Venom thread on Discord"></a>
   <a href="https://github.com/optiscaler/OptiScaler"><img src="https://img.shields.io/badge/Based%20on-OptiScaler-64748b?style=for-the-badge&logo=github" alt="Based on OptiScaler"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-64748b?style=for-the-badge" alt="GPL-3.0"></a>
@@ -104,7 +104,7 @@ Nothing to set: on D3D12 games with HDR output (HDR10 or scRGB) the OptiScaler m
 
 ### 🔪 Neural sharpening
 
-Sharpness → **Method** → **Neural (Barbatos)** (`[Sharpness] Shader=neural`): a small neural network ported from Barbatos' *Neural Sharpen* for ReShade. It only touches the luma and skips aliased edges and fireflies. Like RCAS it sharpens the upscaler's output, **before the game draws its HUD**, so menus and text stay as they are. **Neural Parameters**: Model A (standard) or B (edge-enhanced) and **Edge Response** (negative smooths edges, positive enhances them). Strength 0.5 is the ReShade default; Motion Adaptive Sharpness works with it. D3D11, D3D12 and Vulkan, HDR and float (before the tonemapper) images included.
+Sharpness → **Method** → **Neural (BaBa)** (`[Sharpness] Shader=baba`; older Venom `Shader=neural` keys are still read): a small neural network ported from Barbatos' *Neural Sharpen* for ReShade. It sharpens perceived luma while keeping color hue and saturation, and skips aliased edges and fireflies. Like RCAS it sharpens the upscaler's output, **before the game draws its HUD**, so menus and text stay as they are. **Neural Sharpening Parameters**: Model A (standard) or B (edge-enhanced), **Edge Response** (negative smooths edges, positive enhances them) and **Clamp Output**. Strength 0.5 is the ReShade default; Motion Adaptive Sharpness works with it. D3D11, D3D12 and Vulkan, HDR and float (before the tonemapper) images included.
 
 ### 🌋 XeFG in Vulkan games
 

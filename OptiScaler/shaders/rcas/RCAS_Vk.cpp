@@ -5,7 +5,24 @@
 #include "precompile/da_rcas_sharpen_Shader_Vk.h"
 #include "precompile/neural_sharpen_Shader_Vk.h"
 #include <Config.h>
+#include <magic_enum.hpp>
 #include <misc/DeferredRelease.h>
+
+static bool IsFloatVkFormat(VkFormat InFormat)
+{
+    switch (InFormat)
+    {
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+    case VK_FORMAT_R32G32B32_SFLOAT:
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case VK_FORMAT_R16G16B16_SFLOAT:
+    case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
+        return true;
+    default:
+        return false;
+    }
+}
 
 RCAS_Vk::RCAS_Vk(std::string InName, VkDevice InDevice, VkPhysicalDevice InPhysicalDevice)
     : Shader_Vk(InName, InDevice, InPhysicalDevice)
@@ -233,24 +250,8 @@ bool RCAS_Vk::DispatchNeural(VkCommandBuffer InCmdList, RcasConstants InConstant
     constants.MotionWidth = InMotionVectorsInfo.Width;
     constants.MotionHeight = InMotionVectorsInfo.Height;
 
-    // Float formats can hold values over 1.0 (linear, before the tonemapper)
-    bool inputIsFloat = false;
-
-    switch (InResourceInfo.Format)
-    {
-    case VK_FORMAT_R32G32B32A32_SFLOAT:
-    case VK_FORMAT_R32G32B32_SFLOAT:
-    case VK_FORMAT_R16G16B16A16_SFLOAT:
-    case VK_FORMAT_R16G16B16_SFLOAT:
-    case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
-    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
-        inputIsFloat = true;
-        break;
-    default:
-        break;
-    }
-
-    FillMotionConstants(constants, InConstants, inputIsFloat, (uint32_t) InResourceInfo.Format);
+    FillMotionConstants(constants, InConstants, IsFloatVkFormat(InResourceInfo.Format),
+                        (uint32_t) InResourceInfo.Format, magic_enum::enum_name(InResourceInfo.Format));
 
     _currentSetIndex = (_currentSetIndex + 1) % _maxFramesInFlight;
     UpdateDescriptorSet(WriteConstants(&constants, sizeof(InternalConstantsNeural)), _currentSetIndex,
@@ -314,22 +315,24 @@ bool RCAS_Vk::Dispatch(VkDevice InDevice, VkCommandBuffer InCmdList, RcasConstan
 
     ScopedGpuTime_Vk scopedGpuTime(GpuTime.get(), InCmdList);
 
-    auto sharpnessShader = Config::Instance()->SharpnessShader.value_or_default();
+    const auto requested = Config::Instance()->SharpnessShader.value_or_default();
+    if (requested == SharpenShader::BabaNeural && _pipelineNeural == VK_NULL_HANDLE && !_neuralFallbackLogged)
+    {
+        LOG_WARN("Neural (BaBa) sharpening isn't available for Vulkan in this build, using RCAS");
+        _neuralFallbackLogged = true;
+    }
 
-    // Depth aware shaders fall back to plain RCAS without depth
-    if (InDepthInfo == nullptr &&
-        (sharpnessShader == SharpenShader::LocalContrastDepthAware || sharpnessShader == SharpenShader::DepthAware))
-        sharpnessShader = SharpenShader::RCAS;
-
-    // Neural falls back to RCAS when its pipeline couldn't be made
-    if (sharpnessShader == SharpenShader::Neural && _pipelineNeural == VK_NULL_HANDLE)
-        sharpnessShader = SharpenShader::RCAS;
+    auto sharpnessShader = ResolveShader(requested, InDepthInfo != nullptr, _pipelineNeural != VK_NULL_HANDLE);
 
     SetTimedShader(sharpnessShader);
 
-    if (sharpnessShader == SharpenShader::Neural)
+    if (sharpnessShader == SharpenShader::BabaNeural)
     {
-        return DispatchNeural(InCmdList, InConstants, InResourceInfo, InMotionVectorsInfo, OutResourceInfo);
+        if (DispatchNeural(InCmdList, InConstants, InResourceInfo, InMotionVectorsInfo, OutResourceInfo))
+            return true;
+
+        SetTimedShader(SharpenShader::RCAS);
+        return DispatchRCAS(InCmdList, InConstants, InResourceInfo, InMotionVectorsInfo, OutResourceInfo);
     }
     else if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
     {

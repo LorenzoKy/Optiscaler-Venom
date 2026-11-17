@@ -8,6 +8,7 @@
 #include "precompile/neural_sharpen_Shader.h"
 
 #include <Config.h>
+#include <magic_enum.hpp>
 
 bool RCAS_Dx12::DispatchRCAS(ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource,
                              ID3D12Resource* InMotionVectors, RcasConstants InConstants, ID3D12Resource* OutResource,
@@ -121,7 +122,8 @@ bool RCAS_Dx12::DispatchNeural(ID3D12GraphicsCommandList* InCmdList, ID3D12Resou
     constants.MotionHeight = mvsDesc.Height;
 
     const auto inFormat = InResource->GetDesc().Format;
-    FillMotionConstants(constants, InConstants, IsFloatFormat(inFormat), (uint32_t) inFormat);
+    FillMotionConstants(constants, InConstants, IsFloatFormat(inFormat), (uint32_t) inFormat,
+                        magic_enum::enum_name(inFormat));
 
     if (!CreateConstantsBuffer(_device, currentHeap, constants, currentHeap.GetCbvCPU(0)))
     {
@@ -179,22 +181,18 @@ bool RCAS_Dx12::Dispatch(ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* I
     _counter = _counter % RCAS_NUM_OF_HEAPS;
     FrameDescriptorHeap& currentHeap = _frameHeaps[_counter];
 
-    auto sharpnessShader = Config::Instance()->SharpnessShader.value_or_default();
-
-    // Depth aware shaders fall back to plain RCAS without depth
-    if (InDepth == nullptr &&
-        (sharpnessShader == SharpenShader::LocalContrastDepthAware || sharpnessShader == SharpenShader::DepthAware))
-        sharpnessShader = SharpenShader::RCAS;
-
-    // Neural falls back to RCAS when its pipeline couldn't be made
-    if (sharpnessShader == SharpenShader::Neural && _pipelineStateNeural == nullptr)
-        sharpnessShader = SharpenShader::RCAS;
+    auto sharpnessShader = ResolveShader(Config::Instance()->SharpnessShader.value_or_default(), InDepth != nullptr,
+                                         _pipelineStateNeural != nullptr);
 
     SetTimedShader(sharpnessShader);
 
-    if (sharpnessShader == SharpenShader::Neural)
+    if (sharpnessShader == SharpenShader::BabaNeural)
     {
-        return DispatchNeural(InCmdList, InResource, InMotionVectors, InConstants, OutResource, currentHeap);
+        if (DispatchNeural(InCmdList, InResource, InMotionVectors, InConstants, OutResource, currentHeap))
+            return true;
+
+        SetTimedShader(SharpenShader::RCAS);
+        return DispatchRCAS(InCmdList, InResource, InMotionVectors, InConstants, OutResource, currentHeap);
     }
     else if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
     {

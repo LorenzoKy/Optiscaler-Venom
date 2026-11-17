@@ -10,7 +10,8 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream | |
 | --- | --- | --- | --- |
-| [**v0.4.1**](#v041) · [`opti-venom-v0.4.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4.1) | 2026-11-16 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) | Latest |
+| [**v0.4.2**](#v042) · [`opti-venom-v0.4.2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4.2) | 2026-11-17 | [nightly-20261116](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261116) = [`1e568bb3`](https://github.com/optiscaler/OptiScaler/commit/1e568bb3df081988416b8aa85fa4efe0b22c58cf) (2026-11-16) | Latest |
+| [v0.4.1](#v041) · [`opti-venom-v0.4.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4.1) | 2026-11-16 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) |  |
 | [v0.4](#v04) · [`opti-venom-v0.4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4) | 2026-11-15 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) |  |
 | [v0.3.1](#v031) · [`opti-venom-v0.3.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3.1) | 2026-11-13 | [nightly-20261113](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261113) = [`5f69a25d`](https://github.com/optiscaler/OptiScaler/commit/5f69a25d60cdd4f99d48ea54893972b227ddf583) (2026-11-12) |  |
 | [v0.3](#v03) · [`opti-venom-v0.3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3) | 2026-11-01 | [nightly-20261031](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261031) = [`e7e3872d`](https://github.com/optiscaler/OptiScaler/commit/e7e3872d410f704479d94d318d68d163b6b58947) (2026-10-29) |  |
@@ -25,6 +26,30 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 Automatic builds of every new official nightly, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.4.2
+
+> OptiScaler `10.0.0.1` (development build after `v0.9.4`), built on the latest official nightly [nightly-20261116](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261116) = upstream `master` [`1e568bb3`](https://github.com/optiscaler/OptiScaler/commit/1e568bb3df081988416b8aa85fa4efe0b22c58cf). Neural sharpening hardening, upstream naming alignment and per-shader GPU time naming.
+
+### Fixed
+- **Flat-patch bias on Neural (BaBa) sharpening**: subtracts the network's non-zero response on a uniform 3x3 patch (`RunNetFlat`), so dark linear pre-tonemap areas aren't lifted.
+- **Neural (BaBa) linear/HDR stability and color preservation**: guards the shared luma tile (`s_luma[18][18]`) against Inf/NaN, clamps `EncodeLuma` / `DecodeLuma` safely, limits overshoot with a local 3x3 perceptual limiter and HDR floor gain, keeps wide-gamut negative scRGB channels intact (`floorC`), caps grey addition on saturated LDR colors, and excludes non-float HDR10 PQ inputs from the linear path.
+- **Vulkan & fallback paths**: builds the Vulkan SPIR-V shader with `-fspv-use-unknown-image-format`, centralizes shader resolution and falls back cleanly to RCAS across DX11, DX12 and Vulkan when Neural (BaBa) isn't available, and guards MAS against zero-sized or single-axis-different motion vectors.
+- **Per shader GPU times**: reports the active sharpener's upstream name (`RCAS`, `Depth Aware (RCAS)`, `Depth Aware (DAS)`, or `Neural (BaBa)`) instead of always showing `RCAS`.
+
+### Changed
+- **Upstream menu & INI naming alignment**: matches upstream OptiScaler's `"Neural (BaBa)"` method label, `"Neural Sharpening Parameters"`, `Shader=baba`, `BabaModel`, `BabaEdgeResponse`, `"Clamp Output"` (auto-defaulting based on linear/HDR detection) and `AlwaysClamp` on *Edge Response*. Older Venom INI keys (`Shader=neural`, `NeuralModel`, `NeuralEdgeResponse`) are still accepted on load.
+
+### Upgrading
+- Replace the DLL: both upstream (`Shader=baba`, `BabaModel`, `BabaEdgeResponse`) and older Venom (`Shader=neural`, `NeuralModel`, `NeuralEdgeResponse`) INI keys work without manual edits.
+
+### Who to ask
+
+| Change | From | Ask |
+| --- | --- | --- |
+| Neural (BaBa) hardening, fallback & naming alignment, GPU time shader name, plus everything of v0.4.1 | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG in Vulkan games | **dashdogy** | [dashdogy](https://github.com/dashdogy) on [PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240) |
+| Everything else | **Upstream** nightly-20261116 `1e568bb3` | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.4.1
 

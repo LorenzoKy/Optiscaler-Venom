@@ -382,9 +382,9 @@ class Config
     CustomOptional<float, NoDefault> DADepthBias;
     CustomOptional<bool, NoDefault> DAClampOutput;
 
-    // Neural sharpening
-    CustomOptional<int> NeuralSharpenModel { 0 };             // 0 Model A (standard), 1 Model B (edge-enhanced)
-    CustomOptional<float> NeuralSharpenEdgeResponse { 0.0f }; // -1.0 smooths the edges, 1.0 enhances them
+    // BaBa Neural Sharpening
+    CustomOptional<int> BabaNeuralModel { 0 };             // 0 = Model A (standard), 1 = Model B (edge-enhanced)
+    CustomOptional<float> BabaNeuralEdgeResponse { 0.0f }; // -1 smooth edges, +1 enhance edges
 
     // MAS
     CustomOptional<bool> MotionSharpnessEnabled { false };

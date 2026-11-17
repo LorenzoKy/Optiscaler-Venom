@@ -20,6 +20,7 @@ class RCAS_Vk : public Shader_Vk, public RCAS_Common
     VkPipeline _pipelineDA = VK_NULL_HANDLE;
     VkPipeline _pipelineDASDA = VK_NULL_HANDLE;
     VkPipeline _pipelineNeural = VK_NULL_HANDLE; // Same bindings as RCAS
+    bool _neuralFallbackLogged = false;
 
     void UpdateDescriptorSet(VkDescriptorBufferInfo bufferInfo, int setIndex, VkImageView inputView,
                              VkImageView motionView, VkImageView outputView);

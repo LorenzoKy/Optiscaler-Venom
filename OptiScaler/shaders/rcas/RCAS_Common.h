@@ -8,6 +8,8 @@
 #include "shaders/RCAS_Shader.h"
 
 #include <atomic>
+#include <string>
+#include <string_view>
 
 struct RcasConstants
 {
@@ -32,6 +34,9 @@ class RCAS_Common
     const char* TimedShaderName() const { return _timedShaderName.load(std::memory_order_relaxed); }
 
   protected:
+    // Resolves fallbacks when depth or the optional Neural pipeline aren't available
+    SharpenShader ResolveShader(SharpenShader InShader, bool HasDepth, bool HasNeural) const;
+
     // Called by Dispatch with the shader it runs, after the fallbacks
     void SetTimedShader(SharpenShader InShader);
 
@@ -122,7 +127,8 @@ class RCAS_Common
         int MotionHeight;
     };
 
-    // Dx11 and Vulkan write it in the constant buffers of the other shaders
+    // Dx11 and Vulkan share the constant buffers of the other shaders (256-byte aligned cbuffer slot)
+    static_assert(sizeof(InternalConstantsNeural) <= 256);
     static_assert(sizeof(InternalConstantsNeural) <= sizeof(InternalConstants));
     static_assert(sizeof(InternalConstantsNeural) <= sizeof(InternalConstantsDA));
 
@@ -131,9 +137,8 @@ class RCAS_Common
     // Float formats can hold values over 1.0 (linear, before the tonemapper)
     static bool IsFloatFormat(DXGI_FORMAT InFormat);
 
-    // InputFormat is the DXGI or Vulkan format of the sharpened image, only for the log
     void FillMotionConstants(InternalConstantsNeural& OutConstants, const RcasConstants& InConstants, bool InputIsFloat,
-                             uint32_t InputFormat);
+                             uint32_t InputFormat, std::string_view FormatName);
 
   private:
     std::atomic<const char*> _timedShaderName { "RCAS" };
@@ -141,4 +146,5 @@ class RCAS_Common
     // Last input logged by the neural shader, logged again when it changes
     int64_t _neuralLoggedFormat = -1;
     bool _neuralLoggedLinear = false;
+    bool _neuralLoggedHdr = false;
 };
