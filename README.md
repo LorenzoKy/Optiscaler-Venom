@@ -12,7 +12,7 @@
 <div align="center">
 
   <a href="https://github.com/LorenzoKy/Optiscaler-Venom/releases/latest"><img src="https://img.shields.io/github/v/release/LorenzoKy/Optiscaler-Venom?style=for-the-badge&logo=github&label=Download&color=7c3aed" alt="Latest release"></a>
-  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.4.2-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
+  <a href="CHANGELOG-Opti-Venom.md"><img src="https://img.shields.io/badge/Changelog-v0.4.3-a78bfa?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Changelog"></a>
   <a href="https://discord.com/channels/995299945492008990/1563930670018076843"><img src="https://img.shields.io/badge/Discord-Opti%20Venom%20thread-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Opti Venom thread on Discord"></a>
   <a href="https://github.com/optiscaler/OptiScaler"><img src="https://img.shields.io/badge/Based%20on-OptiScaler-64748b?style=for-the-badge&logo=github" alt="Based on OptiScaler"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-64748b?style=for-the-badge" alt="GPL-3.0"></a>
@@ -102,10 +102,6 @@ Turn on **Frame Generation Time** (in **Rows → More Rows in Presets**, or in C
 
 Nothing to set: on D3D12 games with HDR output (HDR10 or scRGB) the OptiScaler menu and the OSD are converted to the game's HDR format, with the same colors and transparency as in SDR, instead of looking washed out. SDR games and D3D11 / Vulkan games keep the usual drawing.
 
-### 🔪 Neural sharpening
-
-Sharpness → **Method** → **Neural (BaBa)** (`[Sharpness] Shader=baba`; older Venom `Shader=neural` keys are still read): a small neural network ported from Barbatos' *Neural Sharpen* for ReShade. It sharpens perceived luma while keeping color hue and saturation, and skips aliased edges and fireflies. Like RCAS it sharpens the upscaler's output, **before the game draws its HUD**, so menus and text stay as they are. **Neural Sharpening Parameters**: Model A (standard) or B (edge-enhanced), **Edge Response** (negative smooths edges, positive enhances them) and **Clamp Output**. Strength 0.5 is the ReShade default; Motion Adaptive Sharpness works with it. D3D11, D3D12 and Vulkan, HDR and float (before the tonemapper) images included.
-
 ### 🌋 XeFG in Vulkan games
 
 On by default (by dashdogy): Vulkan games get XeFG, XeLL and Dynamic MFG like D3D12 games. If a Vulkan game breaks, set `[XeFG] Vulkan=false` in `OptiScaler.ini` and report it to dashdogy (see [who to ask](#-who-to-ask)).
@@ -170,7 +166,7 @@ Anything not listed is upstream OptiScaler, unchanged. **Since** is the first Ve
 | `[XeFG] Vulkan` switch and safer Vulkan presents | [v0.2 beta 4][b4] | **Venom** |
 | OSD Options columns, graph switches, PC latency graph, Upscale Inputs on the Upscale row | [v0.2][v0.2] | **Venom** |
 | HDR menu and OSD on D3D12, more accurate XeFG time, Venom and Venom Style OSD presets | [v0.3][v0.3] | **Venom** |
-| Neural sharpening (network and weights by [Barbatos](https://github.com/BarbatosAWLS/Reshade-Shaders), MIT), Base FPS switch, Venom presets that set every setting, Venom Strip and Hybrid presets | [v0.4][v0.4] | **Venom** |
+| Base FPS switch, Venom presets that set every setting, Venom Strip and Hybrid presets | [v0.4][v0.4] | **Venom** |
 | XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240), commits marked `Venom-Part: dashdogy`) | [v0.2 beta 4][b4] | **dashdogy** |
 | OSD customization (fonts, colors, presets, settings codes), Custom overlay type, upscale ratio row | upstream `master`, started in Venom ([PR #1238](https://github.com/optiscaler/OptiScaler/pull/1238)) | **Upstream** |
 | Custom upscalers (`OptiScaler\custom` folder), in place of Venom's Extra dlls | nightly 2026-10-29 | **Upstream** |
@@ -215,7 +211,6 @@ The **[Opti Venom thread](https://discord.com/channels/995299945492008990/156393
 - **[OptiScaler](https://github.com/optiscaler/OptiScaler)** and its team and contributors (cdozdil, FakeMichau, TheRazerMD and everyone else): this build is entirely based on their work. If you like it, [support OptiScaler](https://github.com/sponsors/cdozdil?frequency=one-time).
 - **[LorenzoKy](https://github.com/LorenzoKy)**: the Venom features and builds, and the FPS OSD rework of OptiScaler v10 ([merge commit](https://github.com/optiscaler/OptiScaler/commit/08e13adf)).
 - **[dashdogy](https://github.com/dashdogy)**: XeFG in Vulkan games ([PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240)).
-- **[Barbatos](https://github.com/BarbatosAWLS/Reshade-Shaders)**: the network and trained weights of *Neural Sharpen* (MIT), which Venom's Neural sharpening is ported from.
 - The third-party libraries and SDKs OptiScaler uses, listed in the [original README](README-OptiScaler.md).
 
 ## ☕ Support

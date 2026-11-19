@@ -385,6 +385,12 @@ class Config
     // BaBa Neural Sharpening
     CustomOptional<int> BabaNeuralModel { 0 };             // 0 = Model A (standard), 1 = Model B (edge-enhanced)
     CustomOptional<float> BabaNeuralEdgeResponse { 0.0f }; // -1 smooth edges, +1 enhance edges
+    CustomOptional<int> BabaNeuralDebugView { 0 };         // 0 = normal, 1 = sharpening map, 2 = residual map
+
+    // OptiSharpen
+    // 0 = Clean, 1 = TAA, 2 = TAA Wide, 3 = TAA Wide 12 (default), 4 = Punch 10, 5 = Punch 15
+    CustomOptional<int> OptiSharpenModel { 3 };
+    CustomOptional<int> OptiSharpenDebugView { 0 }; // 0 = normal, 1 = sharpening map, 2 = change magnitude
 
     // MAS
     CustomOptional<bool> MotionSharpnessEnabled { false };
@@ -614,12 +620,12 @@ class Config
     CustomOptional<bool> FsrNonLinearPQ { false };
     CustomOptional<bool> FsrAgilitySDKUpgrade { false };
 
-    // These default values will be overwritten at upscaler init time with optimized values
-    CustomOptional<float> FsrVelocity { 1.0f };
-    CustomOptional<float> FsrReactiveScale { 1.0f };
-    CustomOptional<float> FsrShadingScale { 1.0f };
+    // Stability preset values
+    CustomOptional<float> FsrVelocity { 0.5f };
+    CustomOptional<float> FsrReactiveScale { 0.333f };
+    CustomOptional<float> FsrShadingScale { 0.5f };
     CustomOptional<float> FsrAccAddPerFrame { 0.333f };
-    CustomOptional<float> FsrMinDisOccAcc { -0.333f };
+    CustomOptional<float> FsrMinDisOccAcc { 0.0f };
 
     // FSR4
     // Overrides the FSR 4 support detected for the GPU

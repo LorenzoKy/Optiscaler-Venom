@@ -5131,42 +5131,22 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
                 // This will be applied by default
                 if (ImGui::Button("Stability"))
                 {
-                    auto const scaleRatioX =
-                        (float) currentFeature->TargetWidth() / (float) currentFeature->RenderWidth();
-                    auto const scaleRatioY =
-                        (float) currentFeature->TargetHeight() / (float) currentFeature->RenderHeight();
-                    auto const scaleRatio = std::max(scaleRatioX, scaleRatioY);
-
                     config->FsrVelocity = 0.5f;
-                    config->FsrReactiveScale = 0.25f;
-
-                    config->FsrShadingScale.reset();
-                    config->FsrAccAddPerFrame.reset();
-                    config->FsrMinDisOccAcc.reset();
-                    config->FsrShadingScale.set_volatile_value(0.5f / scaleRatio);
-                    config->FsrAccAddPerFrame.set_volatile_value(scaleRatio / 10.0f);
-                    config->FsrMinDisOccAcc.set_volatile_value(scaleRatio / 20.0f);
+                    config->FsrReactiveScale = 0.333f;
+                    config->FsrShadingScale = 0.5f;
+                    config->FsrAccAddPerFrame = 0.333f;
+                    config->FsrMinDisOccAcc = 0.0f;
                 }
 
                 ImGui::SameLine(0.0f, 6.0f);
 
                 if (ImGui::Button("Motion"))
                 {
-                    auto const scaleRatioX =
-                        (float) currentFeature->TargetWidth() / (float) currentFeature->RenderWidth();
-                    auto const scaleRatioY =
-                        (float) currentFeature->TargetHeight() / (float) currentFeature->RenderHeight();
-                    auto const scaleRatio = std::max(scaleRatioX, scaleRatioY);
-
                     config->FsrVelocity = 1.0f;
-                    config->FsrReactiveScale = 0.5f;
-
-                    config->FsrShadingScale.reset();
-                    config->FsrAccAddPerFrame.reset();
-                    config->FsrMinDisOccAcc.reset();
-                    config->FsrShadingScale.set_volatile_value(1.0f / scaleRatio);
-                    config->FsrAccAddPerFrame.set_volatile_value(scaleRatio / 10.0f);
-                    config->FsrMinDisOccAcc.set_volatile_value(scaleRatio / 20.0f);
+                    config->FsrReactiveScale = 0.666f;
+                    config->FsrShadingScale = 1.0f;
+                    config->FsrAccAddPerFrame = 0.166f;
+                    config->FsrMinDisOccAcc = 0.0f;
                 }
 
                 ImGui::SameLine(0.0f, 6.0f);
@@ -8321,10 +8301,12 @@ void MenuCommon::RenderActiveImageSettings(RenderMenuContext& ctx)
                 selectedMode = 3;
             else if (currentShader == SharpenShader::BabaNeural)
                 selectedMode = 4;
+            else if (currentShader == SharpenShader::OptiSharpen)
+                selectedMode = 5;
         }
 
-        const char* sharpenModes[] = { "Upscaler's default", "RCAS", "Depth Aware (RCAS)", "Depth Aware (DAS)",
-                                       "Neural (BaBa)" };
+        const char* sharpenModes[] = { "Upscaler's default", "RCAS",          "Depth Aware (RCAS)",
+                                       "Depth Aware (DAS)",  "Neural (BaBa)", "OptiSharpen" };
 
         if (ImGui::Combo("Method", &selectedMode, sharpenModes, IM_ARRAYSIZE(sharpenModes)))
         {
@@ -8343,6 +8325,8 @@ void MenuCommon::RenderActiveImageSettings(RenderMenuContext& ctx)
                     Config::Instance()->SharpnessShader = SharpenShader::LocalContrastDepthAware;
                 else if (selectedMode == 4)
                     Config::Instance()->SharpnessShader = SharpenShader::BabaNeural;
+                else if (selectedMode == 5)
+                    Config::Instance()->SharpnessShader = SharpenShader::OptiSharpen;
             }
         }
 
@@ -8350,10 +8334,11 @@ void MenuCommon::RenderActiveImageSettings(RenderMenuContext& ctx)
                     "Upscaler's default: Uses the sharpening provided by the upscaler.\n"
                     "RCAS: AMD's RCAS, modified for Contrast and MAS.\n"
                     "Depth Aware: Smarter sharpening with fewer artifacts (heavier).\n"
-                    "Neural (BaBa): Small neural network from the BaBa ReShade shaders. Sharpens perceived luma\n"
-                    "while preserving color hue and saturation, and skips aliased edges and fireflies.\n"
-                    "0.5 strength is the default intensity of the ReShade shader.\n"
-                    "Uses RCAS when its shader isn't available for the current API.\n\n"
+                    "Neural (BaBa): Small neural network from the BaBa ReShade shaders. Only changes the luma and\n"
+                    "skips aliased edges and fireflies. 0.5 strength is the default intensity of the ReShade shader.\n"
+                    "OptiSharpen: Small neural network trained for OptiScaler. Only changes the luma, works the same\n"
+                    "for SDR and HDR. 0.5 strength is the trained strength.\n"
+                    "Neural shaders use RCAS when their shader isn't available for the current API.\n\n"
                     "By default uses a sharpening value provided by the game.\n"
                     "Select 'Override' under 'Sharpness' and adjust the slider to change it.");
 
@@ -8381,11 +8366,18 @@ void MenuCommon::RenderActiveImageSettings(RenderMenuContext& ctx)
                 ShowTooltip("Clamps the final image to the [0, 1] range.\n\n"
                             "Prevents overshoot artifacts such as bright halos or negative colors.\n"
                             "Recommended for LDR pipelines; optional for HDR depending on tone-mapping.\n\n"
-                            "When not set OptiScaler controls it automatically based on linear / HDR detection");
+                            "Off when not set, games that report SDR can still send HDR color");
             };
 
             if (Config::Instance()->SharpnessShader.value_or_default() == SharpenShader::BabaNeural)
             {
+                if (bool overrideMSDebug = config->MotionSharpnessDebug.value_or_default();
+                    ImGui::Checkbox("MAS Debug", &overrideMSDebug))
+                    config->MotionSharpnessDebug = overrideMSDebug;
+
+                ShowTooltip("Areas that are more red will have more sharpness applied\n"
+                            "Green areas will get reduced sharpness");
+
                 if (auto ch = ScopedCollapsingHeader("Neural Sharpening Parameters"); ch.IsHeaderOpen())
                 {
                     ScopedIndent indent {};
@@ -8410,12 +8402,69 @@ void MenuCommon::RenderActiveImageSettings(RenderMenuContext& ctx)
                                 "Positive values enhance the edges.\n"
                                 "0 is uniform.");
 
+                    const char* babaViews[] = { "Normal", "Sharpening map", "Residual map" };
+                    int babaView = std::clamp(config->BabaNeuralDebugView.value_or_default(), 0, 2);
+
+                    if (ImGui::Combo("Debug View", &babaView, babaViews, IM_ARRAYSIZE(babaViews)))
+                        config->BabaNeuralDebugView = babaView;
+
+                    ShowTooltip("Normal: The final image.\n"
+                                "Sharpening map: The sharpening that gets applied, plain gray means no change.\n"
+                                "Residual map: Where the network wants to change the image.");
+
                     ClampOutputCheckbox();
 
                     if (ImGui::Button("Reset Neural Values"))
                     {
                         config->BabaNeuralModel.reset();
                         config->BabaNeuralEdgeResponse.reset();
+                        config->BabaNeuralDebugView.reset();
+                    }
+                }
+            }
+            else if (Config::Instance()->SharpnessShader.value_or_default() == SharpenShader::OptiSharpen)
+            {
+                if (bool overrideMSDebug = config->MotionSharpnessDebug.value_or_default();
+                    ImGui::Checkbox("MAS Debug", &overrideMSDebug))
+                    config->MotionSharpnessDebug = overrideMSDebug;
+
+                ShowTooltip("Areas that are more red will have more sharpness applied\n"
+                            "Green areas will get reduced sharpness");
+
+                if (auto ch = ScopedCollapsingHeader("OptiSharpen Parameters"); ch.IsHeaderOpen())
+                {
+                    ScopedIndent indent {};
+                    ImGui::Spacing();
+
+                    const char* optiModels[] = { "Clean", "TAA", "TAA Wide", "TAA Wide 12", "Punch 10", "Punch 15" };
+                    int optiModel = std::clamp(config->OptiSharpenModel.value_or_default(), 0, 5);
+
+                    if (ImGui::Combo("Model", &optiModel, optiModels, IM_ARRAYSIZE(optiModels)))
+                        config->OptiSharpenModel = optiModel;
+
+                    ShowTooltip("Clean: The first 3x3 model.\n"
+                                "TAA: Model trained for TAA / upscaler output.\n"
+                                "TAA Wide: TAA model with a wider 13 tap window.\n"
+                                "TAA Wide 12 (default): TAA Wide with a larger network (12 hidden units).\n"
+                                "Punch 10: Stronger TAA Wide 12, allowed to overshoot the local range a little.\n"
+                                "Punch 15: Stronger than Punch 10, overshoots a bit more.");
+
+                    const char* optiViews[] = { "Normal", "Sharpening map", "Change magnitude" };
+                    int optiView = std::clamp(config->OptiSharpenDebugView.value_or_default(), 0, 2);
+
+                    if (ImGui::Combo("Debug View", &optiView, optiViews, IM_ARRAYSIZE(optiViews)))
+                        config->OptiSharpenDebugView = optiView;
+
+                    ShowTooltip("Normal: The final image.\n"
+                                "Sharpening map: The relative luma change, plain gray means no change.\n"
+                                "Change magnitude: How much each pixel changes, black means no change.");
+
+                    ClampOutputCheckbox();
+
+                    if (ImGui::Button("Reset OptiSharpen Values"))
+                    {
+                        config->OptiSharpenModel.reset();
+                        config->OptiSharpenDebugView.reset();
                     }
                 }
             }
@@ -8517,8 +8566,7 @@ void MenuCommon::RenderActiveImageSettings(RenderMenuContext& ctx)
 
                 ImGui::BeginDisabled(!config->MotionSharpnessEnabled.value_or_default());
 
-                if (const auto shader = Config::Instance()->SharpnessShader.value_or_default();
-                    shader == SharpenShader::RCAS || shader == SharpenShader::BabaNeural)
+                if (Config::Instance()->SharpnessShader.value_or_default() == SharpenShader::RCAS)
                 {
                     if (bool overrideMSDebug = config->MotionSharpnessDebug.value_or_default();
                         ImGui::Checkbox("MAS Debug", &overrideMSDebug))

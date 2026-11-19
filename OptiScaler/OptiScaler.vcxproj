@@ -242,6 +242,12 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClInclude Include="shaders\hudless_compare_compute\precompile\HCC_Shader_Vk.h" />
     <ClInclude Include="shaders\magnifier\precompile\Magnifier_Shader.h" />
     <ClInclude Include="shaders\magnifier\precompile\Magnifier_Shader_Dx11.h" />
+    <ClInclude Include="shaders\rcas\precompile\baba_neural_sharpen_Shader.h" />
+    <ClInclude Include="shaders\rcas\precompile\baba_neural_sharpen_Shader_Dx11.h" />
+    <ClInclude Include="shaders\rcas\precompile\baba_neural_sharpen_Shader_Vk.h" />
+    <ClInclude Include="shaders\rcas\precompile\opti_sharpen_Shader.h" />
+    <ClInclude Include="shaders\rcas\precompile\opti_sharpen_Shader_Dx11.h" />
+    <ClInclude Include="shaders\rcas\precompile\opti_sharpen_Shader_Vk.h" />
     <ClInclude Include="shaders\reproject\mouseInputs\InputCollection.h" />
     <ClInclude Include="shaders\hud_copy\HudCopy_Vk.h" />
     <ClInclude Include="shaders\hudless_compare_compute\HCC_Vk.h" />
@@ -304,9 +310,6 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClInclude Include="shaders\magnifier\Magnifier_Vk.h" />
     <ClInclude Include="shaders\magnifier\precompile\Magnifier_Shader_Vk.h" />
     <ClInclude Include="shaders\rcas\precompile\da_das_sharpen_Shader.h" />
-    <ClInclude Include="shaders\rcas\precompile\neural_sharpen_Shader.h" />
-    <ClInclude Include="shaders\rcas\precompile\neural_sharpen_Shader_Dx11.h" />
-    <ClInclude Include="shaders\rcas\precompile\neural_sharpen_Shader_Vk.h" />
     <ClInclude Include="shaders\rcas\precompile\da_das_sharpen_Shader_Dx11.h" />
     <ClInclude Include="shaders\rcas\precompile\da_das_sharpen_Shader_Vk.h" />
     <ClInclude Include="shaders\rcas\precompile\da_rcas_sharpen_Shader.h" />
@@ -315,8 +318,9 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClInclude Include="shaders\rcas\precompile\RCAS_Shader.h" />
     <ClInclude Include="shaders\rcas\precompile\RCAS_Shader_Dx11.h" />
     <ClInclude Include="shaders\rcas\precompile\RCAS_Shader_Vk.h" />
+    <ClInclude Include="shaders\rcas\shaders\BABA_NEURAL_Shader.h" />
+    <ClInclude Include="shaders\rcas\shaders\OPTI_SHARPEN_Shader.h" />
     <ClInclude Include="shaders\rcas\shaders\DA_DAS_Shader.h" />
-    <ClInclude Include="shaders\rcas\shaders\NEURAL_Shader.h" />
     <ClInclude Include="shaders\rcas\shaders\DA_RCAS_Shader.h" />
     <ClInclude Include="shaders\rcas\shaders\RCAS_Shader.h" />
     <ClInclude Include="shaders\reproject\Reproject_Common.h" />
@@ -439,6 +443,7 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClInclude Include="inputs\XeSS_Common.h" />
     <ClInclude Include="inputs\XeSS_Dbg.h" />
     <ClInclude Include="inputs\XeSS_Dx12.h" />
+    <ClInclude Include="inputs\XeSS_UE_Dx12.h" />
     <ClInclude Include="inputs\XeSS_Proxy.h" />
     <ClInclude Include="inputs\XeSS_Vulkan.h" />
     <ClInclude Include="menu\font\Hack_Compressed.h" />
@@ -881,6 +886,7 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClCompile Include="version_check.cpp" />
     <ClCompile Include="inputs\XeSS_Debug.cpp" />
     <ClCompile Include="inputs\XeSS_Dx12.cpp" />
+    <ClCompile Include="inputs\XeSS_UE_Dx12.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="OptiScaler.rc">

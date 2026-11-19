@@ -19,7 +19,11 @@ class RCAS_Vk : public Shader_Vk, public RCAS_Common
 
     VkPipeline _pipelineDA = VK_NULL_HANDLE;
     VkPipeline _pipelineDASDA = VK_NULL_HANDLE;
-    VkPipeline _pipelineNeural = VK_NULL_HANDLE; // Same bindings as RCAS
+
+    // RCAS is used when the BaBa Neural / OptiSharpen pipeline can't be created
+    // Uses the same resources as the plain RCAS
+    VkPipeline _pipelineBaba = VK_NULL_HANDLE;
+    VkPipeline _pipelineOpti = VK_NULL_HANDLE;
     bool _neuralFallbackLogged = false;
 
     void UpdateDescriptorSet(VkDescriptorBufferInfo bufferInfo, int setIndex, VkImageView inputView,
@@ -29,8 +33,11 @@ class RCAS_Vk : public Shader_Vk, public RCAS_Common
 
     bool DispatchRCAS(VkCommandBuffer InCmdList, RcasConstants InConstants, const VkImageInfo& InResourceInfo,
                       const VkImageInfo& InMotionVectorsInfo, const VkImageInfo& OutResourceInfo);
-    bool DispatchNeural(VkCommandBuffer InCmdList, RcasConstants InConstants, const VkImageInfo& InResourceInfo,
-                        const VkImageInfo& InMotionVectorsInfo, const VkImageInfo& OutResourceInfo);
+
+    // BaBa Neural or OptiSharpen, same bindings and constants
+    bool DispatchNeural(SharpenShader InShader, VkCommandBuffer InCmdList, RcasConstants InConstants,
+                        const VkImageInfo& InResourceInfo, const VkImageInfo& InMotionVectorsInfo,
+                        const VkImageInfo& OutResourceInfo);
 
     // Merged Dispatch for DA and DASDA
     bool DispatchDepthAdaptive(VkCommandBuffer InCmdList, RcasConstants InConstants, const VkImageInfo& InResourceInfo,

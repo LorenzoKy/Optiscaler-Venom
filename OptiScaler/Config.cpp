@@ -502,14 +502,8 @@ bool Config::Reload(std::filesystem::path iniPath)
 
         // Sharpness
         {
-            SharpnessShader.set_from_config(readString("Sharpness", "Shader", true)
-                                                .transform(
-                                                    [](const std::string& s)
-                                                    {
-                                                        if (s == "neural")
-                                                            return SharpenShader::BabaNeural;
-                                                        return CodeToEnum<SharpenShader>(s);
-                                                    }));
+            SharpnessShader.set_from_config(
+                readString("Sharpness", "Shader", true).transform(CodeToEnum<SharpenShader>));
             OverrideSharpness.set_from_config(readBool("Sharpness", "OverrideSharpness"));
 
             if (auto setting = readFloat("Sharpness", "Sharpness"); setting.has_value())
@@ -591,13 +585,20 @@ bool Config::Reload(std::filesystem::path iniPath)
             DADepthBias.set_from_config(readFloat("CAS", "DADepthBias"));
             DAClampOutput.set_from_config(readBool("CAS", "DAClampOutput"));
 
-            BabaNeuralModel.set_from_config(readInt("CAS", "BabaModel")
-                                                .or_else([&] { return readInt("CAS", "NeuralModel"); })
-                                                .transform([](int v) { return std::clamp(v, 0, 1); }));
+            if (auto setting = readInt("CAS", "BabaModel"); setting.has_value())
+                BabaNeuralModel.set_from_config(std::clamp(setting.value(), 0, 1));
 
-            BabaNeuralEdgeResponse.set_from_config(readFloat("CAS", "BabaEdgeResponse")
-                                                       .or_else([&] { return readFloat("CAS", "NeuralEdgeResponse"); })
-                                                       .transform([](float v) { return std::clamp(v, -1.0f, 1.0f); }));
+            if (auto setting = readFloat("CAS", "BabaEdgeResponse"); setting.has_value())
+                BabaNeuralEdgeResponse.set_from_config(std::clamp(setting.value(), -1.0f, 1.0f));
+
+            if (auto setting = readInt("CAS", "BabaDebugView"); setting.has_value())
+                BabaNeuralDebugView.set_from_config(std::clamp(setting.value(), 0, 2));
+
+            if (auto setting = readInt("CAS", "OptiSharpenModel"); setting.has_value())
+                OptiSharpenModel.set_from_config(std::clamp(setting.value(), 0, 5));
+
+            if (auto setting = readInt("CAS", "OptiSharpenDebugView"); setting.has_value())
+                OptiSharpenDebugView.set_from_config(std::clamp(setting.value(), 0, 2));
 
             MotionSharpnessDebug.set_from_config(readBool("CAS", "SharpenerDebug"));
         }
@@ -1911,6 +1912,10 @@ bool Config::SaveIni()
         ini.SetValue("CAS", "BabaModel", GetIntValue(Instance()->BabaNeuralModel.value_for_config()).c_str());
         ini.SetValue("CAS", "BabaEdgeResponse",
                      GetFloatValue(Instance()->BabaNeuralEdgeResponse.value_for_config()).c_str());
+        ini.SetValue("CAS", "BabaDebugView", GetIntValue(Instance()->BabaNeuralDebugView.value_for_config()).c_str());
+        ini.SetValue("CAS", "OptiSharpenModel", GetIntValue(Instance()->OptiSharpenModel.value_for_config()).c_str());
+        ini.SetValue("CAS", "OptiSharpenDebugView",
+                     GetIntValue(Instance()->OptiSharpenDebugView.value_for_config()).c_str());
 
         ini.SetValue("CAS", "SharpenerDebug",
                      GetBoolValue(Instance()->MotionSharpnessDebug.value_for_config()).c_str());

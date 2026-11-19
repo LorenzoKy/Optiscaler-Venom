@@ -6,10 +6,11 @@
 #include "precompile/RCAS_Shader_Dx11.h"
 #include "precompile/da_das_sharpen_Shader_Dx11.h"
 #include "precompile/da_rcas_sharpen_Shader_Dx11.h"
-#include "precompile/neural_sharpen_Shader_Dx11.h"
+
+#include "precompile/baba_neural_sharpen_Shader_Dx11.h"
+#include "precompile/opti_sharpen_Shader_Dx11.h"
 
 #include <Config.h>
-#include <magic_enum.hpp>
 
 bool RCAS_Dx11::CreateBufferResource(ID3D11Device* InDevice, ID3D11Resource* InResource)
 {
@@ -223,31 +224,64 @@ bool RCAS_Dx11::DispatchDASDepthAdaptive(ID3D11Device* InDevice, ID3D11DeviceCon
     return true;
 }
 
-bool RCAS_Dx11::DispatchNeural(ID3D11Device* InDevice, ID3D11DeviceContext* InContext, ID3D11Texture2D* InResource,
+bool RCAS_Dx11::EnsureNeuralShader(SharpenShader InShader, ID3D11Device* InDevice)
+{
+    const bool isOpti = InShader == SharpenShader::OptiSharpen;
+    auto& computeShader = isOpti ? _computeShaderOpti : _computeShaderBaba;
+    auto& failed = isOpti ? _optiShaderFailed : _babaShaderFailed;
+    const char* shaderName = isOpti ? "OptiSharpen" : "BaBa Neural";
+
+    if (computeShader != nullptr)
+        return true;
+
+    // Don't try to compile it again every frame
+    if (failed || InDevice == nullptr)
+        return false;
+
+    LOG_INFO("[{0}] Creating {1} sharpening shader", _name, shaderName);
+
+    HRESULT result = isOpti ? CreateComputeShader(InDevice, computeShader, opti_sharpen_cso, sizeof(opti_sharpen_cso),
+                                                  optiSharpenCode.c_str())
+                            : CreateComputeShader(InDevice, computeShader, baba_neural_sharpen_cso,
+                                                  sizeof(baba_neural_sharpen_cso), babaNeuralSharpenCode.c_str());
+
+    if (FAILED(result))
+    {
+        LOG_ERROR("[{0}] CreateComputeShader error for {1} shader: {2:X}, RCAS will be used instead", _name, shaderName,
+                  result);
+        computeShader = nullptr;
+        failed = true;
+        return false;
+    }
+
+    return true;
+}
+
+bool RCAS_Dx11::DispatchNeural(SharpenShader InShader, ID3D11DeviceContext* InContext, ID3D11Texture2D* InResource,
                                ID3D11Texture2D* InMotionVectors, RcasConstants InConstants,
                                ID3D11Texture2D* OutResource)
 {
-    (void) InDevice;
+    auto computeShader = InShader == SharpenShader::OptiSharpen ? _computeShaderOpti : _computeShaderBaba;
 
-    if (_computeShaderNeural == nullptr || !InitializeViews(InResource, InMotionVectors, OutResource))
+    if (computeShader == nullptr)
         return false;
 
-    InternalConstantsNeural constants {};
+    if (!InitializeViews(InResource, InMotionVectors, OutResource))
+        return false;
+
+    InternalConstantsBaba constants {};
 
     D3D11_TEXTURE2D_DESC outDesc {};
     OutResource->GetDesc(&outDesc);
     D3D11_TEXTURE2D_DESC mvsDesc {};
     InMotionVectors->GetDesc(&mvsDesc);
-    D3D11_TEXTURE2D_DESC inDesc {};
-    InResource->GetDesc(&inDesc);
 
     constants.OutputWidth = (uint32_t) outDesc.Width;
     constants.OutputHeight = outDesc.Height;
     constants.MotionWidth = (uint32_t) mvsDesc.Width;
     constants.MotionHeight = mvsDesc.Height;
 
-    FillMotionConstants(constants, InConstants, IsFloatFormat(inDesc.Format), (uint32_t) inDesc.Format,
-                        magic_enum::enum_name(inDesc.Format));
+    FillMotionConstants(constants, InConstants, InShader);
 
     D3D11_MAPPED_SUBRESOURCE mappedResource;
     auto hr = InContext->Map(_constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
@@ -264,11 +298,10 @@ bool RCAS_Dx11::DispatchNeural(ID3D11Device* InDevice, ID3D11DeviceContext* InCo
     memcpy(mappedResource.pData, &constants, sizeof(constants));
     InContext->Unmap(_constantBuffer, 0);
 
-    InContext->CSSetShader(_computeShaderNeural, nullptr, 0);
+    InContext->CSSetShader(computeShader, nullptr, 0);
     InContext->CSSetConstantBuffers(0, 1, &_constantBuffer);
-
-    ID3D11ShaderResourceView* srvs[2] = { _srvInput, _srvMotionVectors };
-    InContext->CSSetShaderResources(0, 2, srvs);
+    InContext->CSSetShaderResources(0, 1, &_srvInput);
+    InContext->CSSetShaderResources(1, 1, &_srvMotionVectors);
     InContext->CSSetUnorderedAccessViews(0, 1, &_uavOutput, nullptr);
 
     UINT dispatchWidth = (constants.OutputWidth + InNumThreadsX - 1) / InNumThreadsX;
@@ -300,20 +333,21 @@ bool RCAS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext,
 
     _device = InDevice;
 
-    auto sharpnessShader = ResolveShader(Config::Instance()->SharpnessShader.value_or_default(), InDepth != nullptr,
-                                         _computeShaderNeural != nullptr);
+    auto sharpnessShader = Config::Instance()->SharpnessShader.value_or_default();
+
+    // Depth aware shaders fall back to plain RCAS without depth
+    if (InDepth == nullptr &&
+        (sharpnessShader == SharpenShader::LocalContrastDepthAware || sharpnessShader == SharpenShader::DepthAware))
+        sharpnessShader = SharpenShader::RCAS;
+
+    // Neural shaders fall back to plain RCAS when their shader can't be created
+    const bool isNeural = sharpnessShader == SharpenShader::BabaNeural || sharpnessShader == SharpenShader::OptiSharpen;
+    if (isNeural && !EnsureNeuralShader(sharpnessShader, InDevice))
+        sharpnessShader = SharpenShader::RCAS;
 
     SetTimedShader(sharpnessShader);
 
-    if (sharpnessShader == SharpenShader::BabaNeural)
-    {
-        if (DispatchNeural(InDevice, InContext, InResource, InMotionVectors, InConstants, OutResource))
-            return true;
-
-        SetTimedShader(SharpenShader::RCAS);
-        return DispatchRCAS(InDevice, InContext, InResource, InMotionVectors, InConstants, OutResource);
-    }
-    else if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
+    if (sharpnessShader == SharpenShader::LocalContrastDepthAware)
     {
         return DispatchDASDepthAdaptive(InDevice, InContext, InResource, InMotionVectors, InDepth, InConstants,
                                         OutResource);
@@ -322,6 +356,10 @@ bool RCAS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext,
     {
         return DispatchDepthAdaptive(InDevice, InContext, InResource, InMotionVectors, InDepth, InConstants,
                                      OutResource);
+    }
+    else if (sharpnessShader == SharpenShader::BabaNeural || sharpnessShader == SharpenShader::OptiSharpen)
+    {
+        return DispatchNeural(sharpnessShader, InContext, InResource, InMotionVectors, InConstants, OutResource);
     }
     else if (sharpnessShader == SharpenShader::RCAS)
     {
@@ -367,15 +405,6 @@ RCAS_Dx11::RCAS_Dx11(std::string InName, ID3D11Device* InDevice) : Shader_Dx11(I
         return;
     }
 
-    // Optional, Neural uses RCAS without it
-    result = CreateComputeShader(InDevice, _computeShaderNeural, reinterpret_cast<const void*>(neural_sharpen_cso),
-                                 sizeof(neural_sharpen_cso), neuralSharpenCode.c_str());
-    if (FAILED(result))
-    {
-        LOG_ERROR("[{0}] CreateComputeShader error for Neural shader: {1:X}", _name, result);
-        _computeShaderNeural = nullptr;
-    }
-
     // CBV
     D3D11_BUFFER_DESC cbDesc = {};
     cbDesc.Usage = D3D11_USAGE_DYNAMIC;
@@ -400,7 +429,8 @@ RCAS_Dx11::~RCAS_Dx11()
 
     SAFE_RELEASE(_computeShaderDA);
     SAFE_RELEASE(_computeShaderDASDA);
-    SAFE_RELEASE(_computeShaderNeural);
+    SAFE_RELEASE(_computeShaderBaba);
+    SAFE_RELEASE(_computeShaderOpti);
     SAFE_RELEASE(_srvMotionVectors);
     SAFE_RELEASE(_srvDepth);
 

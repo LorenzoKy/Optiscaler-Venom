@@ -2,14 +2,13 @@
 
 #include "SysUtils.h"
 
+#include "shaders/BABA_NEURAL_Shader.h"
 #include "shaders/DA_DAS_Shader.h"
 #include "shaders/DA_RCAS_Shader.h"
-#include "shaders/NEURAL_Shader.h"
+#include "shaders/OPTI_SHARPEN_Shader.h"
 #include "shaders/RCAS_Shader.h"
 
 #include <atomic>
-#include <string>
-#include <string_view>
 
 struct RcasConstants
 {
@@ -31,12 +30,9 @@ class RCAS_Common
 {
   public:
     // The sharpening shader that ran last, its GPU time is shown under this name
-    const char* TimedShaderName() const { return _timedShaderName.load(std::memory_order_relaxed); }
+    const char* TimedShaderName() const { return _timedShaderName; }
 
   protected:
-    // Resolves fallbacks when depth or the optional Neural pipeline aren't available
-    SharpenShader ResolveShader(SharpenShader InShader, bool HasDepth, bool HasNeural) const;
-
     // Called by Dispatch with the shader it runs, after the fallbacks
     void SetTimedShader(SharpenShader InShader);
 
@@ -53,7 +49,6 @@ class RCAS_Common
         int MotionHeight;
 
         float MotionSharpness;
-        float MotionTextureScale;
         float MvScaleX;
         float MvScaleY;
         float Threshold;
@@ -82,7 +77,6 @@ class RCAS_Common
         int Debug;
 
         float MotionSharpness;
-        float MotionTextureScale;
         float MvScaleX;
         float MvScaleY;
         float MotionThreshold;
@@ -100,21 +94,20 @@ class RCAS_Common
         int DepthHeight;
     };
 
-    // Same order as the cbuffer of neural_sharpen.hlsl
-    struct alignas(256) InternalConstantsNeural
+    // Same order as the cbuffer of baba_neural_sharpen.hlsl and opti_sharpen.hlsl
+    struct alignas(256) InternalConstantsBaba
     {
         float Sharpness;
         float EdgeResponse;
         int Model;
-        int Debug;
+        int ViewMode;
 
+        int ClampOutput;
         int DynamicSharpenEnabled;
         int DisplaySizeMV;
-        int IsHdr;
-        int ClampOutput;
+        int Debug;
 
         float MotionSharpness;
-        float MotionTextureScale;
         float MvScaleX;
         float MvScaleY;
 
@@ -125,26 +118,20 @@ class RCAS_Common
 
         int MotionWidth;
         int MotionHeight;
+        int IsHdr;
     };
 
-    // Dx11 and Vulkan share the constant buffers of the other shaders (256-byte aligned cbuffer slot)
-    static_assert(sizeof(InternalConstantsNeural) <= 256);
-    static_assert(sizeof(InternalConstantsNeural) <= sizeof(InternalConstants));
-    static_assert(sizeof(InternalConstantsNeural) <= sizeof(InternalConstantsDA));
+    // Dx11 and Vulkan reuse the constant buffers of the other shaders
+    static_assert(sizeof(InternalConstantsBaba) <= sizeof(InternalConstants));
+    static_assert(sizeof(InternalConstantsBaba) <= sizeof(InternalConstantsDA));
 
     void FillMotionConstants(InternalConstants& OutConstants, const RcasConstants& InConstants);
     void FillMotionConstants(InternalConstantsDA& OutConstants, const RcasConstants& InConstants);
-    // Float formats can hold values over 1.0 (linear, before the tonemapper)
-    static bool IsFloatFormat(DXGI_FORMAT InFormat);
-
-    void FillMotionConstants(InternalConstantsNeural& OutConstants, const RcasConstants& InConstants, bool InputIsFloat,
-                             uint32_t InputFormat, std::string_view FormatName);
+    // InShader is BabaNeural or OptiSharpen, they share the constants layout
+    void FillMotionConstants(InternalConstantsBaba& OutConstants, const RcasConstants& InConstants,
+                             SharpenShader InShader);
 
   private:
+    // Written by Dispatch, read by the present hooks
     std::atomic<const char*> _timedShaderName { "RCAS" };
-
-    // Last input logged by the neural shader, logged again when it changes
-    int64_t _neuralLoggedFormat = -1;
-    bool _neuralLoggedLinear = false;
-    bool _neuralLoggedHdr = false;
 };

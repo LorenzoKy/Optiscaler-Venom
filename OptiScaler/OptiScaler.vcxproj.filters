@@ -380,6 +380,9 @@
     <ClInclude Include="inputs\XeSS_Dx12.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="inputs\XeSS_UE_Dx12.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="inputs\XeSS_Proxy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -968,18 +971,6 @@
     <ClInclude Include="shaders\rcas\precompile\da_das_sharpen_Shader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="shaders\rcas\precompile\neural_sharpen_Shader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="shaders\rcas\precompile\neural_sharpen_Shader_Dx11.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="shaders\rcas\precompile\neural_sharpen_Shader_Vk.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="shaders\rcas\shaders\NEURAL_Shader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="shaders\rcas\precompile\da_das_sharpen_Shader_Dx11.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1002,6 +993,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="shaders\rcas\precompile\RCAS_Shader_Vk.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="shaders\rcas\shaders\BABA_NEURAL_Shader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="shaders\rcas\shaders\OPTI_SHARPEN_Shader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="shaders\rcas\shaders\DA_DAS_Shader.h">
@@ -1365,6 +1362,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="inputs\XeSS_Dx12.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="inputs\XeSS_UE_Dx12.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="hooks\Vulkan_Hooks.cpp">

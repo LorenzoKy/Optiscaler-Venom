@@ -10,7 +10,8 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 
 | Release | Date | Built on upstream | |
 | --- | --- | --- | --- |
-| [**v0.4.2**](#v042) · [`opti-venom-v0.4.2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4.2) | 2026-11-17 | [nightly-20261116](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261116) = [`1e568bb3`](https://github.com/optiscaler/OptiScaler/commit/1e568bb3df081988416b8aa85fa4efe0b22c58cf) (2026-11-16) | Latest |
+| [**v0.4.3**](#v043) · [`opti-venom-v0.4.3`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4.3) | 2026-11-19 | [nightly-20261119](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261119) = [`4a8d55a9`](https://github.com/optiscaler/OptiScaler/commit/4a8d55a9dc5ebdc802805188c4460dc6f544bc3e) (2026-11-19) | Latest |
+| [v0.4.2](#v042) · [`opti-venom-v0.4.2`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4.2) | 2026-11-17 | [nightly-20261116](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261116) = [`1e568bb3`](https://github.com/optiscaler/OptiScaler/commit/1e568bb3df081988416b8aa85fa4efe0b22c58cf) (2026-11-16) |  |
 | [v0.4.1](#v041) · [`opti-venom-v0.4.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4.1) | 2026-11-16 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) |  |
 | [v0.4](#v04) · [`opti-venom-v0.4`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.4) | 2026-11-15 | [nightly-20261115](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261115) = [`ccf3b8c6`](https://github.com/optiscaler/OptiScaler/commit/ccf3b8c6a75824d0c9c7cc7156bf666afddde3cc) (2026-11-14) |  |
 | [v0.3.1](#v031) · [`opti-venom-v0.3.1`](https://github.com/LorenzoKy/Optiscaler-Venom/releases/tag/opti-venom-v0.3.1) | 2026-11-13 | [nightly-20261113](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261113) = [`5f69a25d`](https://github.com/optiscaler/OptiScaler/commit/5f69a25d60cdd4f99d48ea54893972b227ddf583) (2026-11-12) |  |
@@ -26,6 +27,28 @@ What OptiScaler Venom changes compared to upstream [OptiScaler](https://github.c
 Automatic builds of every new official nightly, not tested, are listed under [Nightly builds](#nightly-builds).
 
 ---
+
+## v0.4.3
+
+> OptiScaler `10.0.0.1` (development build after `v0.9.4`), built on the latest official nightly [nightly-20261119](https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261119) = upstream `master` [`4a8d55a9`](https://github.com/optiscaler/OptiScaler/commit/4a8d55a9dc5ebdc802805188c4460dc6f544bc3e). Rebased on upstream without Venom's BaBa Neural changes.
+
+### Changed
+- **Neural sharpening left to upstream**: removed Venom's Neural (BaBa) port, custom shader changes, legacy `Shader=neural` / `NeuralModel` / `NeuralEdgeResponse` INI fallback keys, and Venom's separate per-shader GPU time naming patch (now integrated upstream). Sharpening uses upstream's **Neural (BaBa)** and **OptiSharpen** directly.
+
+### From upstream (nightly-20261119)
+- **Sharpening**: upstream **Neural (BaBa)** (`Shader=baba`) with groupshared luma tile, piecewise linear flat-patch correction, per-axis motion vector mapping, and alpha preservation in debug views; new **OptiSharpen** neural sharpener (`Shader=opti`, models 0–5); per-shader GPU timing labels (`RCAS`, `Depth Aware (RCAS)`, `Depth Aware (DAS)`, `Neural (BaBa)`, `OptiSharpen`).
+- **Inputs & compatibility**: depth and motion vector extraction for XeSS inputs in Unreal Engine games, updated FSR 3.1 stability preset values, Streamline using ReShade's proxy device when OptiScaler loaded ReShade, disabled FSR-FG Vulkan version query at init (fixes *Doom: The Dark Ages* hang), and hidden log messages for redirected NVAPI calls.
+
+### Upgrading
+- Replace the DLL. Note: old Venom INI keys (`[Sharpness] Shader=neural`, `NeuralModel`, `NeuralEdgeResponse`) are no longer read; use upstream's `Shader=baba` (`BabaModel`, `BabaEdgeResponse`, `BabaDebugView`) or `Shader=opti` (`OptiSharpenModel`, `OptiSharpenDebugView`).
+
+### Who to ask
+
+| Change | From | Ask |
+| --- | --- | --- |
+| OSD features, FG time, D3D12 HDR menu/OSD, presets (same feature set as v0.3.1 + Base FPS and v0.4 presets) | **Venom** | [@LorenzoKy](https://github.com/LorenzoKy), [issues](https://github.com/LorenzoKy/Optiscaler-Venom/issues) |
+| XeFG in Vulkan games | **dashdogy** | [dashdogy](https://github.com/dashdogy) on [PR #1240](https://github.com/optiscaler/OptiScaler/pull/1240) |
+| Neural (BaBa), OptiSharpen, and everything else | **Upstream** nightly-20261119 `4a8d55a9` | [OptiScaler team](https://github.com/optiscaler/OptiScaler/issues) |
 
 ## v0.4.2
 
